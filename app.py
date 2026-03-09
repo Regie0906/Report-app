@@ -1,28 +1,3 @@
-import streamlit as st
-import pandas as pd
-
-st.set_page_config(page_title="Student Council Finance Tracker", layout="wide")
-
-# SESSION STORAGE
-if "reports" not in st.session_state:
-    st.session_state.reports = {}
-
-if "transactions" not in st.session_state:
-    st.session_state.transactions = pd.DataFrame(
-        columns=["Date","Type","Category","Description","Amount"]
-    )
-
-# SIDEBAR NAVIGATION
-menu = st.sidebar.radio(
-    "Navigation",
-    [
-        "Monthly Ledger",
-        "Financial Statements",
-        "Saved Reports",
-        "About"
-    ]
-)
-
 # -------------------------
 # MONTHLY LEDGER
 # -------------------------
@@ -41,7 +16,7 @@ if menu == "Monthly Ledger":
     )
 
     starting_balance = st.number_input(
-        "Starting Balance",
+        "Starting Balance (Cash on Hand at Beginning of Month)",
         min_value=0.0
     )
 
@@ -86,160 +61,23 @@ if menu == "Monthly Ledger":
 
     df = st.session_state.transactions
 
+    # Calculate totals
     income = df[df["Type"]=="Income"]["Amount"].sum()
     expense = df[df["Type"]=="Expense"]["Amount"].sum()
 
-    balance = starting_balance + income - expense
+    # Cash on Hand = Starting Balance + Income - Expenses
+    cash_on_hand = starting_balance + income - expense
 
-    col1,col2,col3 = st.columns(3)
+    # Display metrics
+    col1,col2,col3,col4 = st.columns(4)
 
     col1.metric("Total Income", f"₱ {income:,.2f}")
     col2.metric("Total Expense", f"₱ {expense:,.2f}")
-    col3.metric("Remaining Balance", f"₱ {balance:,.2f}")
+    col3.metric("Remaining Balance", f"₱ {cash_on_hand:,.2f}")
+    col4.metric("Cash on Hand", f"₱ {cash_on_hand:,.2f}")
 
     if st.button("Save Monthly Report"):
 
         st.session_state.reports[month] = df.copy()
 
         st.success(f"{month} report saved")
-
-# -------------------------
-# FINANCIAL STATEMENTS
-# -------------------------
-
-elif menu == "Financial Statements":
-
-    st.title("📊 Financial Statements")
-
-    df = st.session_state.transactions
-
-    income = df[df["Type"]=="Income"]["Amount"].sum()
-    expense = df[df["Type"]=="Expense"]["Amount"].sum()
-
-    net_income = income - expense
-
-    tabs = st.tabs([
-        "Statement of Comprehensive Income",
-        "Statement of Council Equity",
-        "Statement of Financial Position"
-    ])
-
-    # Comprehensive Income
-    with tabs[0]:
-
-        st.subheader("Statement of Comprehensive Income")
-
-        report = pd.DataFrame({
-            "Description":[
-                "Service Revenue",
-                "Operating Expenses",
-                "Net Income"
-            ],
-            "Amount":[
-                income,
-                expense,
-                net_income
-            ]
-        })
-
-        report["Amount"] = report["Amount"].apply(lambda x: f"₱ {x:,.2f}")
-
-        st.table(report)
-
-    # Council Equity
-    with tabs[1]:
-
-        beginning_equity = st.number_input(
-            "Beginning Equity",
-            min_value=0.0
-        )
-
-        ending_equity = beginning_equity + net_income
-
-        equity = pd.DataFrame({
-            "Description":[
-                "Beginning Equity",
-                "Add Net Income",
-                "Ending Equity"
-            ],
-            "Amount":[
-                beginning_equity,
-                net_income,
-                ending_equity
-            ]
-        })
-
-        equity["Amount"] = equity["Amount"].apply(lambda x: f"₱ {x:,.2f}")
-
-        st.table(equity)
-
-    # Financial Position
-    with tabs[2]:
-
-        assets = st.number_input("Assets",min_value=0.0)
-        liabilities = st.number_input("Liabilities",min_value=0.0)
-
-        equity_value = assets - liabilities
-
-        col1,col2,col3 = st.columns(3)
-
-        col1.metric("Assets", f"₱ {assets:,.2f}")
-        col2.metric("Liabilities", f"₱ {liabilities:,.2f}")
-        col3.metric("Equity", f"₱ {equity_value:,.2f}")
-
-# -------------------------
-# SAVED REPORTS
-# -------------------------
-
-elif menu == "Saved Reports":
-
-    st.title("💾 Saved Monthly Reports")
-
-    if st.session_state.reports:
-
-        month = st.selectbox(
-            "Select Report",
-            list(st.session_state.reports.keys())
-        )
-
-        report_df = st.session_state.reports[month].copy()
-
-        report_df["Amount"] = report_df["Amount"].apply(lambda x: f"₱ {x:,.2f}")
-
-        st.dataframe(report_df)
-
-    else:
-        st.info("No reports saved yet.")
-
-# -------------------------
-# ABOUT PAGE
-# -------------------------
-
-elif menu == "About":
-
-    st.title("About This App")
-
-    st.write("""
-    **App Name:** Student Council Finance Report Tracker
-
-    **What the App Does:**
-    This application allows student councils to track their financial transactions,
-    compute balances automatically, and generate financial statements.
-
-    **Target Users:**
-    Student organizations and councils managing financial reports.
-
-    **Inputs Collected:**
-    - Transaction date
-    - Income or expense type
-    - Category
-    - Description
-    - Amount
-
-    **Outputs Displayed:**
-    - Financial ledger
-    - Statement of Comprehensive Income
-    - Statement of Council's Equity
-    - Statement of Financial Position
-    - Saved monthly financial reports
-    """)
