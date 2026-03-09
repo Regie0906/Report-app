@@ -93,9 +93,9 @@ if menu == "Monthly Ledger":
 
     col1,col2,col3 = st.columns(3)
 
-    col1.metric("Total Income",income)
-    col2.metric("Total Expense",expense)
-    col3.metric("Remaining Balance",balance)
+    col1.metric("Total Income", f"₱ {income:,.2f}")
+    col2.metric("Total Expense", f"₱ {expense:,.2f}")
+    col3.metric("Remaining Balance", f"₱ {balance:,.2f}")
 
     if st.button("Save Monthly Report"):
 
@@ -124,6 +124,7 @@ elif menu == "Financial Statements":
         "Statement of Financial Position"
     ])
 
+    # Comprehensive Income
     with tabs[0]:
 
         st.subheader("Statement of Comprehensive Income")
@@ -141,8 +142,11 @@ elif menu == "Financial Statements":
             ]
         })
 
+        report["Amount"] = report["Amount"].apply(lambda x: f"₱ {x:,.2f}")
+
         st.table(report)
 
+    # Council Equity
     with tabs[1]:
 
         beginning_equity = st.number_input(
@@ -165,18 +169,23 @@ elif menu == "Financial Statements":
             ]
         })
 
+        equity["Amount"] = equity["Amount"].apply(lambda x: f"₱ {x:,.2f}")
+
         st.table(equity)
 
+    # Financial Position
     with tabs[2]:
 
         assets = st.number_input("Assets",min_value=0.0)
         liabilities = st.number_input("Liabilities",min_value=0.0)
 
-        equity = assets - liabilities
+        equity_value = assets - liabilities
 
-        st.metric("Assets",assets)
-        st.metric("Liabilities",liabilities)
-        st.metric("Equity",equity)
+        col1,col2,col3 = st.columns(3)
+
+        col1.metric("Assets", f"₱ {assets:,.2f}")
+        col2.metric("Liabilities", f"₱ {liabilities:,.2f}")
+        col3.metric("Equity", f"₱ {equity_value:,.2f}")
 
 # -------------------------
 # SAVED REPORTS
@@ -193,7 +202,11 @@ elif menu == "Saved Reports":
             list(st.session_state.reports.keys())
         )
 
-        st.dataframe(st.session_state.reports[month])
+        report_df = st.session_state.reports[month].copy()
+
+        report_df["Amount"] = report_df["Amount"].apply(lambda x: f"₱ {x:,.2f}")
+
+        st.dataframe(report_df)
 
     else:
         st.info("No reports saved yet.")
@@ -210,14 +223,15 @@ elif menu == "About":
     **App Name:** Student Council Finance Report Tracker
 
     **What the App Does:**
-    This app records income and expenses and automatically generates financial statements.
+    This application allows student councils to track their financial transactions,
+    compute balances automatically, and generate financial statements.
 
     **Target Users:**
-    Student councils and organizations managing finances.
+    Student organizations and councils managing financial reports.
 
     **Inputs Collected:**
     - Transaction date
-    - Income or expense
+    - Income or expense type
     - Category
     - Description
     - Amount
@@ -227,4 +241,5 @@ elif menu == "About":
     - Statement of Comprehensive Income
     - Statement of Council's Equity
     - Statement of Financial Position
+    - Saved monthly financial reports
     """)
