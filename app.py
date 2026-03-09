@@ -1,147 +1,249 @@
 import streamlit as st
 import pandas as pd
-import datetime
+import os
+from fpdf import FPDF
 
-st.set_page_config(page_title="Financial Report Tracker", layout="wide")
+st.set_page_config(page_title="ICSSC Finance Tracker", layout="wide")
 
-# Sidebar Navigation
-page = st.sidebar.radio("Navigation", ["Home", "Add Transaction", "Financial Report", "About"])
-
-# Storage
-if "transactions" not in st.session_state:
-    st.session_state.transactions = []
-
-# HOME PAGE
-if page == "Home":
-
-    st.title("💰 Financial Report Tracker")
-
-    name = st.text_input("Enter your Name")
-
-    st.write("This app helps you track income and expenses and generate a financial report.")
-
-    st.image("https://cdn-icons-png.flaticon.com/512/3135/3135706.png", width=150)
-
-    if st.button("Start"):
-        st.success(f"Welcome {name}! Start tracking your finances.")
-
-# ADD TRANSACTION PAGE
-elif page == "Add Transaction":
-
-    st.header("Add Financial Transaction")
-
-    transaction_type = st.selectbox(
-        "Transaction Type",
-        ["Income", "Expense"]
+# SESSION STORAGE
+if "data" not in st.session_state:
+    st.session_state.data = pd.DataFrame(
+        columns=["Date","Type","Description","Amount"]
     )
 
-    category = st.selectbox(
-        "Category",
-        ["Salary", "Allowance", "Food", "Transportation", "Bills", "Entertainment"]
+# SIDEBAR
+menu = st.sidebar.radio(
+    "Navigation",
+    [
+        "Monthly Ledger",
+        "Financial Statements",
+        "Upload Receipts",
+        "Export Report"
+    ]
+)
+
+# -----------------------------
+# MONTHLY LEDGER
+# -----------------------------
+
+if menu == "Monthly Ledger":
+
+    st.title("📒 Student Council Monthly Finance Report")
+
+    starting_balance = st.number_input(
+        "Enter Starting Balance",
+        min_value=0.0,
+        value=0.0
     )
 
-    amount = st.number_input("Amount", min_value=0)
+    st.subheader("Add Transaction")
 
-    date = st.date_input("Transaction Date", datetime.date.today())
+    col1,col2,col3,col4 = st.columns(4)
 
-    payment_method = st.radio(
-        "Payment Method",
-        ["Cash", "Bank", "GCash", "Card"]
-    )
+    with col1:
+        date = st.date_input("Date")
 
-    importance = st.slider("Transaction Importance", 1, 10)
-
-    notes = st.text_area("Notes")
-
-    receipt = st.file_uploader("Upload Receipt (optional)")
-
-    confirm = st.checkbox("Confirm Transaction")
-
-    if st.button("Save Transaction") and confirm:
-
-        st.session_state.transactions.append({
-            "Type": transaction_type,
-            "Category": category,
-            "Amount": amount,
-            "Date": date,
-            "Payment": payment_method
-        })
-
-        st.success("Transaction saved successfully!")
-
-# FINANCIAL REPORT PAGE
-elif page == "Financial Report":
-
-    st.title("📊 Financial Report")
-
-    df = pd.DataFrame(st.session_state.transactions)
-
-    if not df.empty:
-
-        income = df[df["Type"] == "Income"]["Amount"].sum()
-        expense = df[df["Type"] == "Expense"]["Amount"].sum()
-        balance = income - expense
-
-        col1, col2, col3 = st.columns(3)
-
-        col1.metric("Total Income", income)
-        col2.metric("Total Expenses", expense)
-        col3.metric("Balance", balance)
-
-        st.subheader("Transaction Table")
-        st.dataframe(df)
-
-        st.subheader("Expense Chart")
-        st.bar_chart(df.groupby("Category")["Amount"].sum())
-
-        progress = st.progress(70)
-
-        st.caption("Financial tracking progress")
-
-        with st.expander("Financial Advice"):
-            st.write("""
-            • Track expenses daily  
-            • Set a monthly savings goal  
-            • Avoid unnecessary spending
-            """)
-
-        csv = df.to_csv(index=False).encode("utf-8")
-
-        st.download_button(
-            "Download Financial Report",
-            csv,
-            "financial_report.csv",
-            "text/csv"
+    with col2:
+        t_type = st.selectbox(
+            "Transaction Type",
+            ["Income","Expense"]
         )
 
-    else:
-        st.warning("No transactions recorded yet.")
+    with col3:
+        desc = st.text_input("Product / Description")
 
-# ABOUT PAGE
-elif page == "About":
+    with col4:
+        amount = st.number_input("Amount",min_value=0.0)
 
-    st.title("About This App")
+    if st.button("Add Transaction"):
 
-    st.write("""
-    **App Name:** Financial Report Tracker
+        new = pd.DataFrame(
+            [[date,t_type,desc,amount]],
+            columns=st.session_state.data.columns
+        )
 
-    **What the App Does:**  
-    This app allows users to record financial transactions and generate a report showing income, expenses, and balance.
+        st.session_state.data = pd.concat(
+            [st.session_state.data,new],
+            ignore_index=True
+        )
 
-    **Target Users:**  
-    Students or individuals who want to monitor their financial activity.
+    st.subheader("Ledger")
 
-    **Inputs Collected:**  
-    - Transaction type  
-    - Category  
-    - Amount  
-    - Date  
-    - Payment method  
-    - Notes  
+    st.session_state.data = st.data_editor(
+        st.session_state.data,
+        num_rows="dynamic"
+    )
 
-    **Outputs Displayed:**  
-    - Financial summary  
-    - Transaction table  
-    - Expense charts  
-    - Downloadable financial report
-    """)
+    df = st.session_state.data
+
+    income = df[df["Type"]=="Income"]["Amount"].sum()
+    expenses = df[df["Type"]=="Expense"]["Amount"].sum()
+
+    balance = starting_balance + income - expenses
+
+    st.divider()
+
+    col1,col2,col3 = st.columns(3)
+
+    col1.metric("Total Income",f"₱ {income:,.2f}")
+    col2.metric("Total Expenses",f"₱ {expenses:,.2f}")
+    col3.metric("Remaining Balance",f"₱ {balance:,.2f}")
+
+# -----------------------------
+# FINANCIAL STATEMENTS
+# -----------------------------
+
+elif menu == "Financial Statements":
+
+    st.title("📊 Financial Statements")
+
+    df = st.session_state.data
+
+    income = df[df["Type"]=="Income"]["Amount"].sum()
+    expenses = df[df["Type"]=="Expense"]["Amount"].sum()
+    net_income = income - expenses
+
+    tabs = st.tabs([
+        "Statement of Comprehensive Income",
+        "Statement of Council Equity",
+        "Statement of Financial Position"
+    ])
+
+    # Comprehensive Income
+    with tabs[0]:
+
+        st.subheader("Statement of Comprehensive Income")
+
+        report = pd.DataFrame({
+            "Description":[
+                "Service Revenue",
+                "Other Income",
+                "Operating Expenses",
+                "Net Income"
+            ],
+            "Amount":[
+                income,
+                0,
+                expenses,
+                net_income
+            ]
+        })
+
+        st.table(report)
+
+    # Council Equity
+    with tabs[1]:
+
+        st.subheader("Statement of Council's Equity")
+
+        beginning_equity = st.number_input(
+            "Beginning Equity",
+            min_value=0.0
+        )
+
+        ending_equity = beginning_equity + net_income
+
+        equity = pd.DataFrame({
+            "Description":[
+                "Beginning Equity",
+                "Add Net Income",
+                "Ending Equity"
+            ],
+            "Amount":[
+                beginning_equity,
+                net_income,
+                ending_equity
+            ]
+        })
+
+        st.table(equity)
+
+    # Financial Position
+    with tabs[2]:
+
+        st.subheader("Statement of Financial Position")
+
+        assets = st.number_input("Assets",min_value=0.0)
+        liabilities = st.number_input("Liabilities",min_value=0.0)
+
+        equity = assets - liabilities
+
+        st.metric("Assets",assets)
+        st.metric("Liabilities",liabilities)
+        st.metric("Equity",equity)
+
+# -----------------------------
+# RECEIPT UPLOAD
+# -----------------------------
+
+elif menu == "Upload Receipts":
+
+    st.title("📂 Upload Receipts")
+
+    month = st.selectbox(
+        "Select Month",
+        [
+            "January","February","March","April",
+            "May","June","July","August",
+            "September","October","November","December"
+        ]
+    )
+
+    event = st.text_input("Event Name")
+
+    uploaded_files = st.file_uploader(
+        "Upload Receipt Files",
+        accept_multiple_files=True
+    )
+
+    if uploaded_files:
+
+        folder = f"receipts/{month}_{event}"
+
+        os.makedirs(folder,exist_ok=True)
+
+        for file in uploaded_files:
+
+            with open(
+                os.path.join(folder,file.name),
+                "wb"
+            ) as f:
+                f.write(file.getbuffer())
+
+        st.success("Receipts saved successfully!")
+
+# -----------------------------
+# EXPORT PDF REPORT
+# -----------------------------
+
+elif menu == "Export Report":
+
+    st.title("📄 Export Financial Report")
+
+    if st.button("Generate PDF"):
+
+        df = st.session_state.data
+
+        pdf = FPDF()
+        pdf.add_page()
+
+        pdf.set_font("Arial","B",16)
+        pdf.cell(0,10,"Student Council Financial Report",ln=True)
+
+        pdf.set_font("Arial","",12)
+
+        for i,row in df.iterrows():
+
+            text = f"{row['Date']} | {row['Type']} | {row['Description']} | ₱{row['Amount']}"
+
+            pdf.cell(0,8,text,ln=True)
+
+        pdf.output("finance_report.pdf")
+
+        with open("finance_report.pdf","rb") as f:
+
+            st.download_button(
+                "Download PDF",
+                f,
+                file_name="finance_report.pdf"
+            )
