@@ -5,16 +5,7 @@ import datetime
 st.set_page_config(page_title="Financial Report Tracker", layout="wide")
 
 # Sidebar Navigation
-page = st.sidebar.radio(
-    "Navigation",
-    [
-        "Home",
-        "Add Transaction",
-        "Financial Reports",
-        "Upload Receipts",
-        "About"
-    ]
-)
+page = st.sidebar.radio("Navigation", ["Home", "Add Transaction", "Financial Report", "About"])
 
 # Storage
 if "transactions" not in st.session_state:
@@ -25,40 +16,31 @@ if page == "Home":
 
     st.title("💰 Financial Report Tracker")
 
-    name = st.text_input("Enter Organization / User Name")
+    name = st.text_input("Enter your Name")
 
-    st.write("Track finances, generate financial statements, and store receipts.")
+    st.write("This app helps you track income and expenses and generate a financial report.")
 
-    st.image("https://cdn-icons-png.flaticon.com/512/2331/2331941.png", width=150)
+    st.image("https://cdn-icons-png.flaticon.com/512/3135/3135706.png", width=150)
 
-    if st.button("Start Tracking"):
-        st.success(f"Welcome {name}! You can now manage your financial records.")
+    if st.button("Start"):
+        st.success(f"Welcome {name}! Start tracking your finances.")
 
-# ADD TRANSACTION
+# ADD TRANSACTION PAGE
 elif page == "Add Transaction":
 
     st.header("Add Financial Transaction")
 
     transaction_type = st.selectbox(
         "Transaction Type",
-        ["Income", "Expense", "Asset", "Liability"]
+        ["Income", "Expense"]
     )
 
     category = st.selectbox(
         "Category",
-        [
-            "Membership Fee",
-            "Event Fund",
-            "Food",
-            "Supplies",
-            "Transportation",
-            "Equipment"
-        ]
+        ["Salary", "Allowance", "Food", "Transportation", "Bills", "Entertainment"]
     )
 
     amount = st.number_input("Amount", min_value=0)
-
-    event = st.text_input("Event / Activity Name")
 
     date = st.date_input("Transaction Date", datetime.date.today())
 
@@ -71,7 +53,9 @@ elif page == "Add Transaction":
 
     notes = st.text_area("Notes")
 
-    confirm = st.checkbox("Confirm this transaction")
+    receipt = st.file_uploader("Upload Receipt (optional)")
+
+    confirm = st.checkbox("Confirm Transaction")
 
     if st.button("Save Transaction") and confirm:
 
@@ -79,16 +63,16 @@ elif page == "Add Transaction":
             "Type": transaction_type,
             "Category": category,
             "Amount": amount,
-            "Event": event,
-            "Date": date
+            "Date": date,
+            "Payment": payment_method
         })
 
         st.success("Transaction saved successfully!")
 
-# FINANCIAL REPORTS
-elif page == "Financial Reports":
+# FINANCIAL REPORT PAGE
+elif page == "Financial Report":
 
-    st.title("📊 Financial Statements")
+    st.title("📊 Financial Report")
 
     df = pd.DataFrame(st.session_state.transactions)
 
@@ -96,110 +80,42 @@ elif page == "Financial Reports":
 
         income = df[df["Type"] == "Income"]["Amount"].sum()
         expense = df[df["Type"] == "Expense"]["Amount"].sum()
-        assets = df[df["Type"] == "Asset"]["Amount"].sum()
-        liabilities = df[df["Type"] == "Liability"]["Amount"].sum()
+        balance = income - expense
 
-        net_income = income - expense
-        equity = assets - liabilities
+        col1, col2, col3 = st.columns(3)
 
-        tabs = st.tabs([
-            "Statement of Comprehensive Income",
-            "Statement of Council’s Equity",
-            "Statement of Financial Position"
-        ])
+        col1.metric("Total Income", income)
+        col2.metric("Total Expenses", expense)
+        col3.metric("Balance", balance)
 
-        # STATEMENT OF COMPREHENSIVE INCOME
-        with tabs[0]:
-
-            st.subheader("Statement of Comprehensive Income")
-
-            data = {
-                "Description": ["Total Income", "Total Expenses", "Net Income"],
-                "Amount": [income, expense, net_income]
-            }
-
-            income_df = pd.DataFrame(data)
-
-            st.table(income_df)
-
-            st.bar_chart(income_df.set_index("Description"))
-
-        # STATEMENT OF COUNCIL EQUITY
-        with tabs[1]:
-
-            st.subheader("Statement of Council’s Equity")
-
-            equity_data = {
-                "Description": [
-                    "Beginning Equity",
-                    "Add: Net Income",
-                    "Ending Equity"
-                ],
-                "Amount": [
-                    equity,
-                    net_income,
-                    equity + net_income
-                ]
-            }
-
-            equity_df = pd.DataFrame(equity_data)
-
-            st.table(equity_df)
-
-        # STATEMENT OF FINANCIAL POSITION
-        with tabs[2]:
-
-            st.subheader("Statement of Financial Position")
-
-            position_data = {
-                "Category": ["Assets", "Liabilities", "Equity"],
-                "Amount": [assets, liabilities, equity]
-            }
-
-            position_df = pd.DataFrame(position_data)
-
-            st.table(position_df)
-
-            st.metric("Assets", assets)
-            st.metric("Liabilities", liabilities)
-            st.metric("Equity", equity)
-
-        st.subheader("Transaction Records")
-
+        st.subheader("Transaction Table")
         st.dataframe(df)
+
+        st.subheader("Expense Chart")
+        st.bar_chart(df.groupby("Category")["Amount"].sum())
+
+        progress = st.progress(70)
+
+        st.caption("Financial tracking progress")
+
+        with st.expander("Financial Advice"):
+            st.write("""
+            • Track expenses daily  
+            • Set a monthly savings goal  
+            • Avoid unnecessary spending
+            """)
+
+        csv = df.to_csv(index=False).encode("utf-8")
+
+        st.download_button(
+            "Download Financial Report",
+            csv,
+            "financial_report.csv",
+            "text/csv"
+        )
 
     else:
         st.warning("No transactions recorded yet.")
-
-# RECEIPT UPLOAD SECTION
-elif page == "Upload Receipts":
-
-    st.title("📂 Upload Receipts")
-
-    month = st.selectbox(
-        "Select Month",
-        [
-            "January","February","March","April",
-            "May","June","July","August",
-            "September","October","November","December"
-        ]
-    )
-
-    event = st.text_input("Event Name")
-
-    receipt_files = st.file_uploader(
-        "Upload Receipts",
-        accept_multiple_files=True
-    )
-
-    if receipt_files:
-
-        for file in receipt_files:
-            st.write("Uploaded:", file.name)
-
-        st.success("Receipts uploaded successfully!")
-
-    st.caption("Upload receipts for documentation and auditing purposes.")
 
 # ABOUT PAGE
 elif page == "About":
@@ -209,23 +125,23 @@ elif page == "About":
     st.write("""
     **App Name:** Financial Report Tracker
 
-    **Use Case:**  
-    This application records financial transactions and automatically generates financial statements.
+    **What the App Does:**  
+    This app allows users to record financial transactions and generate a report showing income, expenses, and balance.
 
     **Target Users:**  
-    Student councils, organizations, and individuals who need financial reports.
+    Students or individuals who want to monitor their financial activity.
 
     **Inputs Collected:**  
     - Transaction type  
     - Category  
     - Amount  
-    - Event or activity  
-    - Transaction date  
-    - Receipt uploads  
+    - Date  
+    - Payment method  
+    - Notes  
 
     **Outputs Displayed:**  
-    - Statement of Comprehensive Income  
-    - Statement of Council’s Equity  
-    - Statement of Financial Position  
-    - Transaction records and charts  
+    - Financial summary  
+    - Transaction table  
+    - Expense charts  
+    - Downloadable financial report
     """)
