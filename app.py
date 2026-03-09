@@ -1,24 +1,26 @@
 import streamlit as st
 import pandas as pd
 import os
-from fpdf import FPDF
+import matplotlib.pyplot as plt
+from datetime import date
 
-st.set_page_config(page_title="ICSSC Finance Tracker", layout="wide")
+st.set_page_config(page_title="Student Council Finance Reports", layout="wide")
 
-# SESSION STORAGE
-if "data" not in st.session_state:
-    st.session_state.data = pd.DataFrame(
-        columns=["Date","Type","Description","Amount"]
+# SESSION DATA
+if "transactions" not in st.session_state:
+    st.session_state.transactions = pd.DataFrame(
+        columns=["Date","Month","Type","Category","Description","Amount"]
     )
 
 # SIDEBAR
-menu = st.sidebar.radio(
+menu = st.sidebar.selectbox(
     "Navigation",
     [
         "Monthly Ledger",
         "Financial Statements",
-        "Upload Receipts",
-        "Export Report"
+        "Expense Analytics",
+        "Receipt Manager",
+        "Save Report"
     ]
 )
 
@@ -28,12 +30,11 @@ menu = st.sidebar.radio(
 
 if menu == "Monthly Ledger":
 
-    st.title("📒 Student Council Monthly Finance Report")
+    st.title("📒 Student Council Monthly Finance Ledger")
 
     starting_balance = st.number_input(
         "Enter Starting Balance",
-        min_value=0.0,
-        value=0.0
+        min_value=0.0
     )
 
     st.subheader("Add Transaction")
@@ -41,52 +42,59 @@ if menu == "Monthly Ledger":
     col1,col2,col3,col4 = st.columns(4)
 
     with col1:
-        date = st.date_input("Date")
+        t_date = st.date_input("Date")
 
     with col2:
+        month = st.selectbox(
+            "Month",
+            ["January","February","March","April","May","June",
+             "July","August","September","October","November","December"]
+        )
+
+    with col3:
         t_type = st.selectbox(
             "Transaction Type",
             ["Income","Expense"]
         )
 
-    with col3:
-        desc = st.text_input("Product / Description")
-
     with col4:
         amount = st.number_input("Amount",min_value=0.0)
+
+    category = st.text_input("Category")
+    desc = st.text_input("Description")
 
     if st.button("Add Transaction"):
 
         new = pd.DataFrame(
-            [[date,t_type,desc,amount]],
-            columns=st.session_state.data.columns
+            [[t_date,month,t_type,category,desc,amount]],
+            columns=st.session_state.transactions.columns
         )
 
-        st.session_state.data = pd.concat(
-            [st.session_state.data,new],
+        st.session_state.transactions = pd.concat(
+            [st.session_state.transactions,new],
             ignore_index=True
         )
 
-    st.subheader("Ledger")
+        st.success("Transaction added successfully")
 
-    st.session_state.data = st.data_editor(
-        st.session_state.data,
+    st.subheader("Ledger Table")
+
+    st.session_state.transactions = st.data_editor(
+        st.session_state.transactions,
         num_rows="dynamic"
     )
 
-    df = st.session_state.data
+    df = st.session_state.transactions
 
     income = df[df["Type"]=="Income"]["Amount"].sum()
-    expenses = df[df["Type"]=="Expense"]["Amount"].sum()
+    expense = df[df["Type"]=="Expense"]["Amount"].sum()
 
-    balance = starting_balance + income - expenses
-
-    st.divider()
+    balance = starting_balance + income - expense
 
     col1,col2,col3 = st.columns(3)
 
     col1.metric("Total Income",f"₱ {income:,.2f}")
-    col2.metric("Total Expenses",f"₱ {expenses:,.2f}")
+    col2.metric("Total Expenses",f"₱ {expense:,.2f}")
     col3.metric("Remaining Balance",f"₱ {balance:,.2f}")
 
 # -----------------------------
@@ -97,11 +105,12 @@ elif menu == "Financial Statements":
 
     st.title("📊 Financial Statements")
 
-    df = st.session_state.data
+    df = st.session_state.transactions
 
     income = df[df["Type"]=="Income"]["Amount"].sum()
-    expenses = df[df["Type"]=="Expense"]["Amount"].sum()
-    net_income = income - expenses
+    expense = df[df["Type"]=="Expense"]["Amount"].sum()
+
+    net_income = income - expense
 
     tabs = st.tabs([
         "Statement of Comprehensive Income",
@@ -109,32 +118,25 @@ elif menu == "Financial Statements":
         "Statement of Financial Position"
     ])
 
-    # Comprehensive Income
+    # SCI
     with tabs[0]:
 
         st.subheader("Statement of Comprehensive Income")
 
-        report = pd.DataFrame({
+        sci = pd.DataFrame({
             "Description":[
                 "Service Revenue",
                 "Other Income",
                 "Operating Expenses",
                 "Net Income"
             ],
-            "Amount":[
-                income,
-                0,
-                expenses,
-                net_income
-            ]
+            "Amount":[income,0,expense,net_income]
         })
 
-        st.table(report)
+        st.table(sci)
 
-    # Council Equity
+    # COUNCIL EQUITY
     with tabs[1]:
-
-        st.subheader("Statement of Council's Equity")
 
         beginning_equity = st.number_input(
             "Beginning Equity",
@@ -158,10 +160,8 @@ elif menu == "Financial Statements":
 
         st.table(equity)
 
-    # Financial Position
+    # FINANCIAL POSITION
     with tabs[2]:
-
-        st.subheader("Statement of Financial Position")
 
         assets = st.number_input("Assets",min_value=0.0)
         liabilities = st.number_input("Liabilities",min_value=0.0)
@@ -173,20 +173,47 @@ elif menu == "Financial Statements":
         st.metric("Equity",equity)
 
 # -----------------------------
-# RECEIPT UPLOAD
+# EXPENSE ANALYTICS
 # -----------------------------
 
-elif menu == "Upload Receipts":
+elif menu == "Expense Analytics":
+
+    st.title("📊 Expense Analytics")
+
+    df = st.session_state.transactions
+    expense_df = df[df["Type"]=="Expense"]
+
+    if not expense_df.empty:
+
+        chart = expense_df.groupby("Category")["Amount"].sum()
+
+        fig,ax = plt.subplots()
+
+        ax.pie(
+            chart,
+            labels=chart.index,
+            autopct="%1.1f%%"
+        )
+
+        ax.set_title("Expense Distribution")
+
+        st.pyplot(fig)
+
+    else:
+        st.info("No expense data available")
+
+# -----------------------------
+# RECEIPT MANAGER
+# -----------------------------
+
+elif menu == "Receipt Manager":
 
     st.title("📂 Upload Receipts")
 
     month = st.selectbox(
         "Select Month",
-        [
-            "January","February","March","April",
-            "May","June","July","August",
-            "September","October","November","December"
-        ]
+        ["January","February","March","April","May","June",
+         "July","August","September","October","November","December"]
     )
 
     event = st.text_input("Event Name")
@@ -204,46 +231,35 @@ elif menu == "Upload Receipts":
 
         for file in uploaded_files:
 
-            with open(
-                os.path.join(folder,file.name),
-                "wb"
-            ) as f:
+            path = os.path.join(folder,file.name)
+
+            with open(path,"wb") as f:
                 f.write(file.getbuffer())
 
-        st.success("Receipts saved successfully!")
+        st.success("Receipts saved successfully")
 
 # -----------------------------
-# EXPORT PDF REPORT
+# SAVE REPORT
 # -----------------------------
 
-elif menu == "Export Report":
+elif menu == "Save Report":
 
-    st.title("📄 Export Financial Report")
+    st.title("💾 Save Monthly Report")
 
-    if st.button("Generate PDF"):
+    month = st.selectbox(
+        "Select Month to Save",
+        ["January","February","March","April","May","June",
+         "July","August","September","October","November","December"]
+    )
 
-        df = st.session_state.data
+    df = st.session_state.transactions
 
-        pdf = FPDF()
-        pdf.add_page()
+    if st.button("Save Report"):
 
-        pdf.set_font("Arial","B",16)
-        pdf.cell(0,10,"Student Council Financial Report",ln=True)
+        os.makedirs(f"reports/{month}",exist_ok=True)
 
-        pdf.set_font("Arial","",12)
+        path = f"reports/{month}/finance_report.csv"
 
-        for i,row in df.iterrows():
+        df.to_csv(path,index=False)
 
-            text = f"{row['Date']} | {row['Type']} | {row['Description']} | ₱{row['Amount']}"
-
-            pdf.cell(0,8,text,ln=True)
-
-        pdf.output("finance_report.pdf")
-
-        with open("finance_report.pdf","rb") as f:
-
-            st.download_button(
-                "Download PDF",
-                f,
-                file_name="finance_report.pdf"
-            )
+        st.success(f"Report saved successfully in {path}")
