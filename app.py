@@ -119,4 +119,4 @@ else:
             with c2: t_type = st.selectbox("Type", ["Income", "Expense", "Donation (From)", "Donation (To)"])
             with c3: category = st.text_input("Category")
             desc = st.text_input("Description")
-            amt_val = st.number_input("Amount (₱)", min_value=0.0, step=100.
+            amt_val = st.number_input("Amount (₱)", min_value=0.0, step=100).
