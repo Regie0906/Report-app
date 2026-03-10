@@ -6,17 +6,6 @@ from datetime import datetime
 st.set_page_config(page_title="Student Council Finance Tracker", layout="wide")
 
 # -------------------------
-# DATABASE / CONFIG
-# -------------------------
-COUNCILS = [
-    "ICSSC - Institute of Computer Studies Student Council",
-    "SSC - Supreme Student Council",
-    "JPCS - Junior Philippine Computer Society",
-    "ITSO - IT Society Organization",
-    "Other Organization"
-]
-
-# -------------------------
 # SESSION STORAGE INITIALIZATION
 # -------------------------
 if "logged_in" not in st.session_state:
@@ -32,12 +21,19 @@ if "transactions" not in st.session_state:
         columns=["Council", "Date", "Type", "Category", "Description", "Amount"]
     )
 
+COUNCILS = [
+    "ICSSC - Institute of Computer Studies Student Council",
+    "SSC - Supreme Student Council",
+    "JPCS - Junior Philippine Computer Society",
+    "ITSO - IT Society Organization",
+    "Other Organization"
+]
+
 # -------------------------
 # LOGIN PAGE
 # -------------------------
 if not st.session_state.logged_in:
     st.title("🔐 Council Finance Login")
-    # Using a placeholder to ensure they choose a council
     selected_council = st.selectbox("Select Council / Organization", ["-- Choose One --"] + COUNCILS)
     
     if st.button("Login"):
@@ -59,7 +55,6 @@ else:
 
     menu = st.sidebar.radio("Navigation", ["Monthly Ledger", "Balance Sheet", "Saved Reports", "About"])
 
-    # Source of truth
     full_df = st.session_state.transactions
     user_df = full_df[full_df["Council"] == st.session_state.current_user].copy()
     user_df["Amount"] = pd.to_numeric(user_df["Amount"], errors='coerce').fillna(0)
@@ -80,7 +75,7 @@ else:
 
         st.session_state.current_period = f"{datetime(2026, month_selected, 1).strftime('%B')} {year_selected}"
 
-        # Filtering data for current period metrics
+        # Filtering data
         user_df["Date"] = pd.to_datetime(user_df["Date"], errors='coerce')
         this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & (user_df["Date"].dt.year == year_selected)]
         
@@ -99,7 +94,6 @@ else:
 
         st.divider()
 
-        # Input Section
         st.subheader("➕ Add New Transaction")
         with st.container(border=True):
             c1, c2, c3 = st.columns(3)
@@ -120,7 +114,7 @@ else:
                 st.rerun()
 
         st.subheader("📊 Ledger Table")
-        edited_ledger = st.data_editor(user_df, num_rows="dynamic", use_container_width=True)
+        edited_ledger = st.data_editor(user_df, num_rows="dynamic", use_container_width=True, key="main_ledger")
         if st.button("Save Changes to Ledger"):
             other_councils = full_df[full_df["Council"] != st.session_state.current_user]
             edited_ledger["Council"] = st.session_state.current_user
@@ -129,7 +123,7 @@ else:
             st.rerun()
 
     elif menu == "Balance Sheet":
-        st.title("Financial Summary")
+        st.title("Financial Summary & Trends")
         st_bal_sheet = st.session_state.manual_start_val
         current_period = st.session_state.get('current_period', "Current Month")
         
@@ -137,10 +131,12 @@ else:
         all_don_f = user_df[user_df["Type"] == "Donation (From)"]["Amount"].sum()
         all_don_t = user_df[user_df["Type"] == "Donation (To)"]["Amount"].sum()
         all_exp = user_df[user_df["Type"] == "Expense"]["Amount"].sum()
-        
         final_bal = st_bal_sheet + all_inc + all_don_f - all_exp - all_don_t
 
-        st.code(f"""
+        col_left, col_right = st.columns([1, 1])
+        with col_left:
+            st.subheader("Balance Summary")
+            st.code(f"""
 {st.session_state.current_user}
 PERIOD: {current_period}
 --------------------------------------------------
@@ -153,30 +149,56 @@ STARTING BALANCE:                ₱ {st_bal_sheet:,.2f}
 --------------------------------------------------
 REMAINING BALANCE:               ₱ {final_bal:,.2f}
 --------------------------------------------------
-        """)
+            """)
 
-        if st.button("💾 Finalize & Save Report (Carry Over Balance)"):
+        with col_right:
+            st.subheader("Balance Trend Line")
+            if not user_df.empty:
+                chart_df = user_df.copy().sort_values("Date")
+                chart_df['Impact'] = chart_df.apply(
+                    lambda x: x['Amount'] if x['Type'] in ["Income", "Donation (From)"] 
+                    else -x['Amount'], axis=1
+                )
+                chart_df['Current Balance'] = st_bal_sheet + chart_df['Impact'].cumsum()
+                st.line_chart(chart_df.set_index('Date')['Current Balance'])
+            else:
+                st.info("No data for trend chart.")
+
+        if st.button("💾 Finalize & Save Report"):
             archive_key = f"{st.session_state.current_user}_{current_period}_{datetime.now().strftime('%H%M%S')}"
             st.session_state.reports[archive_key] = user_df.copy()
-            
-            # Reset current user's ledger and carry balance forward
             st.session_state.transactions = full_df[full_df["Council"] != st.session_state.current_user]
             st.session_state.manual_start_val = final_bal
-            
-            st.success(f"Report finalized! ₱{final_bal:,.2f} is now the Starting Balance.")
+            st.success(f"Report finalized! ₱{final_bal:,.2f} carried forward.")
             st.rerun()
 
     elif menu == "Saved Reports":
         st.title("📁 Your Archived Reports")
+        st.info("You can edit archived reports here just like the Monthly Ledger.")
+        
         user_reports = {k: v for k, v in st.session_state.reports.items() if k.startswith(st.session_state.current_user)}
+        
         if user_reports:
             for key, data in user_reports.items():
                 label = key.split('_')[1]
                 with st.expander(f"Archived Report: {label}"):
-                    st.dataframe(data, use_container_width=True)
+                    # Same function as ledger table: dynamic editing
+                    edited_archived_df = st.data_editor(data, num_rows="dynamic", use_container_width=True, key=f"editor_{key}")
+                    
+                    col_edit, col_del = st.columns([1, 1])
+                    with col_edit:
+                        if st.button("Update Archived Report", key=f"btn_save_{key}"):
+                            st.session_state.reports[key] = edited_archived_df
+                            st.success("Archive updated successfully!")
+                            st.rerun()
+                    with col_del:
+                        if st.button("🗑️ Delete This Report", key=f"btn_del_{key}"):
+                            del st.session_state.reports[key]
+                            st.warning("Report deleted.")
+                            st.rerun()
         else:
             st.info("No saved reports found.")
 
     elif menu == "About":
         st.title("About")
-        st.info("Student Council Finance Tracker: Simplified Login Version.")
+        st.info("Finance Tracker with Dynamic Ledger & Editable Archives.")
