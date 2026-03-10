@@ -32,7 +32,7 @@ COUNCILS = [
 # LOGIN PAGE
 # -------------------------
 if not st.session_state.logged_in:
-    st.title("🔐 Council Finance Login")
+    st.title("Council Finance Login")
     selected_council = st.selectbox("Select Council / Organization", ["-- Choose One --"] + COUNCILS)
     
     if st.button("Login"):
@@ -71,7 +71,7 @@ else:
             year_selected = st.number_input("Year", value=2026)
         with col_s:
             # Monthly Ledger starts at 0 as requested
-            ledger_start_bal = st.number_input("Month Starting Balance (₱)", value=0.0)
+            ledger_start_bal = st.number_input("Beginning Balance (₱)", value=0.0)
 
         st.session_state.current_period = f"{datetime(2026, month_selected, 1).strftime('%B')} {year_selected}"
 
@@ -115,7 +115,7 @@ else:
                 st.success("Entry Saved!")
                 st.rerun()
 
-        st.subheader("📊 Ledger Table")
+        st.subheader("History")
         edited_ledger = st.data_editor(user_df, num_rows="dynamic", use_container_width=True, key="main_ledger")
         if st.button("Save Changes to Ledger"):
             other_councils = full_df[full_df["Council"] != st.session_state.current_user]
@@ -125,7 +125,7 @@ else:
             st.rerun()
 
     elif menu == "Balance Sheet":
-        st.title("Financial Summary & Trends")
+        st.title("Financial Records")
         # Pulls the actual carried-over balance from the session
         st_bal_sheet = st.session_state.manual_start_val
         current_period = st.session_state.get('current_period', "Current Month")
@@ -139,7 +139,7 @@ else:
 
         col_left, col_right = st.columns([1, 1])
         with col_left:
-            st.subheader("Cumulative Balance Summary")
+            st.subheader("Balance Summary")
             st.code(f"""
 {st.session_state.current_user}
 PERIOD: {current_period}
@@ -156,7 +156,7 @@ TOTAL BALANCE:                   ₱ {final_bal:,.2f}
             """)
 
         with col_right:
-            st.subheader("Cumulative Trend Line")
+            st.subheader("Financial flow")
             if not user_df.empty:
                 chart_df = user_df.copy().sort_values("Date")
                 chart_df['Impact'] = chart_df.apply(
@@ -166,7 +166,7 @@ TOTAL BALANCE:                   ₱ {final_bal:,.2f}
                 chart_df['Current Balance'] = st_bal_sheet + chart_df['Impact'].cumsum()
                 st.line_chart(chart_df.set_index('Date')['Current Balance'])
             else:
-                st.info("No data for trend chart.")
+                st.info("No data for financial Update.")
 
         if st.button("Finalize & Save Report"):
             archive_key = f"{st.session_state.current_user}_{current_period}_{datetime.now().strftime('%H%M%S')}"
@@ -202,3 +202,30 @@ TOTAL BALANCE:                   ₱ {final_bal:,.2f}
     elif menu == "About":
         st.title("About")
         st.info("Finance Tracker: Independent Ledger and Cumulative Balance Sheet logic.")
+
+st.title("About the Application")
+
+st.write("""
+### Student Council Financial Reports Tracker
+
+The **Student Council Financial Reports Tracker** is a digital tool designed to help student councils and organizations efficiently record, monitor, and manage their financial activities. This application simplifies the process of tracking income, expenses, and financial balances while automatically generating organized financial reports.
+
+The system allows councils to maintain accurate records of their transactions, ensuring transparency and accountability in handling organizational funds. By automating financial calculations and report generation, the application helps student leaders focus more on planning activities and serving the student body rather than manually preparing financial documents.
+
+### Key Features
+• Record monthly income and expenses  
+• Automatic calculation of balances and totals  
+• Editable transaction ledger  
+• Financial statement generation  
+• Multi-organization tracking  
+• Organized monthly financial reports  
+
+### Purpose
+This application was developed to support **student leaders, treasurers, and council officers** in managing their finances more efficiently and responsibly. It promotes proper financial documentation, transparency, and accountability within student organizations.
+
+### Developed For
+Student Councils and Organizations that need a **simple, reliable, and organized system for financial reporting**.
+
+### Developer
+This application was created as a financial management tool to assist student councils in preparing clear and accurate financial reports for their activities and projects.
+""")
