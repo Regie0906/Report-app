@@ -38,7 +38,7 @@ menu = st.sidebar.radio(
 # MONTHLY LEDGER
 # -------------------------
 if menu == "Monthly Ledger":
-    st.title("📒 Student Council Monthly Finance Ledger")
+    st.title("Student Council Monthly Finance Ledger")
 
     council_selected = st.selectbox("Select Council / Organization", councils)
     month = st.selectbox(
@@ -145,7 +145,7 @@ if menu == "Monthly Ledger":
 # FINANCIAL STATEMENTS
 # -------------------------
 elif menu == "Financial Statements":
-    st.title("📊 Financial Statements")
+    st.title("Financial Statements")
     council_selected = st.selectbox("Select Council", councils)
     
     # Filter global transactions for this council
@@ -201,7 +201,7 @@ ENDING EQUITY:              ₱ {end_equity:,.2f}
 # SAVED REPORTS
 # -------------------------
 elif menu == "Saved Reports":
-    st.title("📁 Archived Reports")
+    st.title("Archived Reports")
     if st.session_state.reports:
         for key, data in st.session_state.reports.items():
             with st.expander(f"Report: {key}"):
