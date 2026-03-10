@@ -1,3 +1,133 @@
+import streamlit as st
+import pandas as pd
+
+st.set_page_config(page_title="Student Council Finance Tracker", layout="wide")
+
+# -------------------------
+# SESSION STORAGE
+# -------------------------
+if "reports" not in st.session_state:
+    st.session_state.reports = {}
+
+if "transactions" not in st.session_state:
+    st.session_state.transactions = pd.DataFrame(
+        columns=["Date", "Type", "Category", "Description", "Amount"]
+    )
+
+# -------------------------
+# SIDEBAR NAVIGATION
+# -------------------------
+menu = st.sidebar.radio(
+    "Navigation",
+    [
+        "Monthly Ledger",
+        "Financial Statements",
+        "Saved Reports",
+        "About"
+    ]
+)
+
+# -------------------------
+# MONTHLY LEDGER
+# -------------------------
+if menu == "Monthly Ledger":
+
+    st.title("📒 Student Council Monthly Finance Ledger")
+
+    month = st.selectbox(
+        "Select Month",
+        [
+            "January", "February", "March", "April",
+            "May", "June", "July", "August",
+            "September", "October", "November", "December"
+        ]
+    )
+
+    starting_balance = st.number_input(
+        "Starting Balance (Cash on Hand at Beginning of Month)",
+        min_value=0.0
+    )
+
+    st.subheader("Add Transaction")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        date = st.date_input("Date")
+    with col2:
+        t_type = st.selectbox("Type", ["Income", "Expense"])
+    with col3:
+        category = st.text_input("Category")
+    with col4:
+        amount = st.number_input("Amount", min_value=0.0)
+    desc = st.text_input("Description")
+
+    if st.button("Add Transaction"):
+        new = pd.DataFrame(
+            [[date, t_type, category, desc, amount]],
+            columns=st.session_state.transactions.columns
+        )
+        st.session_state.transactions = pd.concat(
+            [st.session_state.transactions, new],
+            ignore_index=True
+        )
+        st.success("Transaction added")
+
+    st.subheader("Ledger Table")
+    st.session_state.transactions = st.data_editor(
+        st.session_state.transactions, num_rows="dynamic"
+    )
+
+    df = st.session_state.transactions
+
+    # Calculate totals
+    total_income = df[df["Type"] == "Income"]["Amount"].sum()
+    total_expense = df[df["Type"] == "Expense"]["Amount"].sum()
+    cash_on_hand = starting_balance + total_income - total_expense
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Income", f"₱ {total_income:,.2f}")
+    col2.metric("Total Expense", f"₱ {total_expense:,.2f}")
+    col3.metric("Remaining Balance", f"₱ {cash_on_hand:,.2f}")
+    col4.metric("Cash on Hand", f"₱ {cash_on_hand:,.2f}")
+
+    if st.button("Save Monthly Report"):
+        st.session_state.reports[month] = df.copy()
+        st.success(f"{month} report saved")
+
+# -------------------------
+# FINANCIAL STATEMENTS
+# -------------------------
+elif menu == "Financial Statements":
+
+    st.title("📊 Financial Statements")
+    df = st.session_state.transactions
+
+    # Month and Year
+    month_selected = st.selectbox(
+        "Select Month for Statement",
+        [
+            "January", "February", "March", "April",
+            "May", "June", "July", "August",
+            "September", "October", "November", "December"
+        ]
+    )
+    year_selected = st.number_input("Year", min_value=2000, max_value=2100, value=2026, step=1)
+
+    # Calculate totals
+    total_income = df[df["Type"] == "Income"]["Amount"].sum()
+    total_expense = df[df["Type"] == "Expense"]["Amount"].sum()
+    net_income = total_income - total_expense
+    cash_on_hand = total_income - total_expense + st.session_state.transactions["Amount"].iloc[0] if not df.empty else 0
+
+    # -------------------------
+    # Statement of Comprehensive Income
+    # -------------------------
+    if total_income > 0:
+        st.subheader("Statement of Comprehensive Income")
+
+        income_items = df[df["Type"] == "Income"].groupby("Category")["Amount"].sum().reset_index()
+        expense_items = df[df["Type"] == "Expense"].groupby("Category")["Amount"].sum().reset_index()
+
+        statement_income = f"""
 SUPREME STUDENT COUNCIL
 STATEMENT OF COMPREHENSIVE INCOME
 For the Month Ended {month_selected} 31, {year_selected}
@@ -93,3 +223,5 @@ Total Equity                             ₱ {total_equity:>12,.2f}
 TOTAL LIABILITIES AND EQUITY            ₱ {total_assets:>12,.2f}
 """
     st.text(statement_position)
+
+
