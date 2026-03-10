@@ -114,7 +114,20 @@ else:
 
         st.divider()
 
-st.dataframe(this_month_df[["Date", "Type", "Category", "Description", "Amount"]], use_container_width=True)
+        st.subheader("Manage Current Transactions")
+        if not this_month_df.empty:
+            selected_item_idx = st.selectbox(
+                "Select a transaction to Delete:", 
+                options=this_month_df.index.tolist(),
+                format_func=lambda x: f"{this_month_df.loc[x, 'Date'].strftime('%Y-%m-%d')} | {this_month_df.loc[x, 'Description']} (₱{this_month_df.loc[x, 'Amount']:,.2f})"
+            )
+            
+            if st.button("🗑️ Delete Transaction", type="secondary"):
+                save_data(full_df.drop(selected_item_idx))
+                st.success("Transaction deleted.")
+                st.rerun()
+
+            st.dataframe(this_month_df[["Date", "Type", "Category", "Description", "Amount"]], use_container_width=True)
         else:
             st.info("No records for this period.")
 
@@ -139,20 +152,7 @@ st.dataframe(this_month_df[["Date", "Type", "Category", "Description", "Amount"]
                 st.success("Entry Saved!")
                 st.rerun()
 
-        st.subheader("Manage Current Transactions")
-        if not this_month_df.empty:
-            selected_item_idx = st.selectbox(
-                "Select a transaction to Delete:", 
-                options=this_month_df.index.tolist(),
-                format_func=lambda x: f"{this_month_df.loc[x, 'Date'].strftime('%Y-%m-%d')} | {this_month_df.loc[x, 'Description']} (₱{this_month_df.loc[x, 'Amount']:,.2f})"
-            )
-            
-            if st.button("🗑️ Delete Transaction", type="secondary"):
-                save_data(full_df.drop(selected_item_idx))
-                st.success("Transaction deleted.")
-                st.rerun()
-
-elif menu == "Balance Sheet":
+    elif menu == "Balance Sheet":
         st.title("Financial Summary")
         st_bal_sheet = st.session_state.get('manual_start_val', 0.0)
         current_period = st.session_state.get('current_period', "Current Month")
@@ -231,4 +231,3 @@ REMAINING BALANCE:               ₱ {final_bal:,.2f}
     elif menu == "About":
         st.title("About")
         st.info("Finance System with Period Closing, Automated Carry-over, and Archive Management.")
-
