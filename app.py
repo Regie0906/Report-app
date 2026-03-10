@@ -36,10 +36,7 @@ def save_data(df):
 
 def load_archives():
     if os.path.exists(ARCHIVE_FILE):
-        try:
-            return pd.read_csv(ARCHIVE_FILE)
-        except:
-            pass
+        return pd.read_csv(ARCHIVE_FILE)
     return pd.DataFrame(columns=["Council", "Archive_Date", "Period", "Starting_Bal", "Total_Inc", "Don_Rcv", "Total_Exp", "Don_Giv", "Remaining_Bal"])
 
 def save_all_archives(df):
@@ -56,7 +53,7 @@ if "manual_start_val" not in st.session_state:
     st.session_state.manual_start_val = 0.0
 
 # -------------------------
-# MAIN APP LOGIC
+# LOGIN PAGE
 # -------------------------
 if not st.session_state.logged_in:
     st.title("Council Finance Login")
@@ -66,15 +63,20 @@ if not st.session_state.logged_in:
         st.session_state.current_user = selected_council
         st.rerun()
 else:
+    # -------------------------
+    # AUTHENTICATED APP
+    # -------------------------
     st.sidebar.title(f"👤 {st.session_state.current_user}")
     if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
+        st.session_state.current_user = None
         st.rerun()
 
     menu = st.sidebar.radio("Navigation", ["Monthly Ledger", "Balance Sheet", "Archived Reports", "About"])
-    
+
     full_df = load_data()
     user_df = full_df[full_df["Council"] == st.session_state.current_user].copy()
+    user_df["Amount"] = pd.to_numeric(user_df["Amount"], errors='coerce').fillna(0)
 
     if menu == "Monthly Ledger":
         st.title(f"Financial Report: {st.session_state.current_user}")
@@ -86,43 +88,48 @@ else:
                                           format_func=lambda x: datetime(2026, x, 1).strftime('%B'))
         with col_y:
             year_selected = st.number_input("Year", value=2026)
+        
         with col_s:
             st_bal = st.number_input("Starting Balance (₱)", value=float(st.session_state.manual_start_val))
             st.session_state.manual_start_val = st_bal
 
         st.session_state.current_period = f"{datetime(2026, month_selected, 1).strftime('%B')} {year_selected}"
 
-        # Filter and calculate
-        this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & (user_df["Date"].dt.year == year_selected)].copy()
-        inc_sum = this_month_df[this_month_df["Type"].isin(["Income", "Donation (From)"])]["Amount"].sum()
-        exp_sum = this_month_df[this_month_df["Type"].isin(["Expense", "Donation (To)"])]["Amount"].sum()
-        rem_bal = st_bal + inc_sum - exp_sum
+        this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & 
+                                (user_df["Date"].dt.year == year_selected)]
+        
+        curr_inc = this_month_df[this_month_df["Type"] == "Income"]["Amount"].sum()
+        curr_don_from = this_month_df[this_month_df["Type"] == "Donation (From)"]["Amount"].sum()
+        curr_don_to = this_month_df[this_month_df["Type"] == "Donation (To)"]["Amount"].sum()
+        curr_exp = this_month_df[this_month_df["Type"] == "Expense"]["Amount"].sum()
+        
+        rem_bal = st_bal + curr_inc + curr_don_from - curr_exp - curr_don_to
 
-        st.subheader(f"Activity for {st.session_state.current_period}")
+        st.subheader(f"Financial Activity for {st.session_state.current_period}")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("STARTING", f"₱{st_bal:,.2f}")
-        m2.metric("EXPENSES", f"₱{exp_sum:,.2f}")
-        m3.metric("INCOME", f"₱{inc_sum:,.2f}")
-        m4.metric("REMAINING", f"₱{rem_bal:,.2f}")
+        m1.metric("STARTING BALANCE", f"₱ {st_bal:,.2f}")
+        m2.metric("EXPENSES", f"₱ {(curr_exp + curr_don_to):,.2f}")
+        m3.metric("DONATIONS RECEIVED", f"₱ {curr_don_from:,.2f}")
+        m4.metric("REMAINING BALANCE", f"₱ {rem_bal:,.2f}")
 
         st.divider()
-        st.write("### Transaction History")
-        st.caption("Click a row below to select it, then the delete button will appear.")
 
-        # Updated selection logic to avoid the error in your screenshot
-        ledger_selection = st.dataframe(
-            this_month_df[["Date", "Type", "Category", "Description", "Amount"]],
-            use_container_width=True,
-            on_select="rerun",
-            selection_mode="single_row"
-        )
-
-        # Show delete button ONLY if a row is selected
-        if ledger_selection.selection.rows:
-            selected_idx = this_month_df.index[ledger_selection.selection.rows[0]]
-            if st.button("🗑️ Delete Selected Record", type="primary"):
-                save_data(full_df.drop(selected_idx))
+        st.subheader("Manage Current Transactions")
+        if not this_month_df.empty:
+            selected_item_idx = st.selectbox(
+                "Select a transaction to Delete:", 
+                options=this_month_df.index.tolist(),
+                format_func=lambda x: f"{this_month_df.loc[x, 'Date'].strftime('%Y-%m-%d')} | {this_month_df.loc[x, 'Description']} (₱{this_month_df.loc[x, 'Amount']:,.2f})"
+            )
+            
+            if st.button("🗑️ Delete Transaction", type="secondary"):
+                save_data(full_df.drop(selected_item_idx))
+                st.success("Transaction deleted.")
                 st.rerun()
+
+            st.dataframe(this_month_df[["Date", "Type", "Category", "Description", "Amount"]], use_container_width=True)
+        else:
+            st.info("No records for this period.")
 
         with st.expander("➕ Add New Transaction"):
             c1, c2, c3 = st.columns(3)
@@ -130,10 +137,19 @@ else:
             with c2: t_type = st.selectbox("Type", ["Income", "Expense", "Donation (From)", "Donation (To)"])
             with c3: category = st.text_input("Category")
             desc = st.text_input("Description")
-            amt_val = st.number_input("Amount (₱)", min_value=0.0)
+            amt_val = st.number_input("Amount (₱)", min_value=0.0, step=100.0)
+
             if st.button("Add Entry"):
-                new_row = pd.DataFrame([{"Council": st.session_state.current_user, "Date": t_date, "Type": t_type, "Category": category, "Description": desc, "Amount": amt_val}])
-                save_data(pd.concat([full_df, new_row], ignore_index=True))
+                new_row = pd.DataFrame([{
+                    "Council": st.session_state.current_user,
+                    "Date": t_date,
+                    "Type": t_type,
+                    "Category": category,
+                    "Description": desc,
+                    "Amount": amt_val
+                }])
+                save_data(pd.concat([load_data(), new_row], ignore_index=True))
+                st.success("Entry Saved!")
                 st.rerun()
 
     elif menu == "Balance Sheet":
@@ -141,48 +157,77 @@ else:
         st_bal_sheet = st.session_state.get('manual_start_val', 0.0)
         current_period = st.session_state.get('current_period', "Current Month")
         
-        inc = user_df[user_df["Type"] == "Income"]["Amount"].sum()
-        don_f = user_df[user_df["Type"] == "Donation (From)"]["Amount"].sum()
-        don_t = user_df[user_df["Type"] == "Donation (To)"]["Amount"].sum()
-        exp = user_df[user_df["Type"] == "Expense"]["Amount"].sum()
-        final_bal = st_bal_sheet + inc + don_f - exp - don_t
+        all_inc = user_df[user_df["Type"] == "Income"]["Amount"].sum()
+        all_don_f = user_df[user_df["Type"] == "Donation (From)"]["Amount"].sum()
+        all_don_t = user_df[user_df["Type"] == "Donation (To)"]["Amount"].sum()
+        all_exp = user_df[user_df["Type"] == "Expense"]["Amount"].sum()
+        
+        final_bal = st_bal_sheet + all_inc + all_don_f - all_exp - all_don_t
 
-        st.code(f"PERIOD: {current_period}\nREMAINING BALANCE: ₱ {final_bal:,.2f}")
+        st.code(f"""
+{st.session_state.current_user}
+PERIOD: {current_period}
+--------------------------------------------------
+STARTING BALANCE:                ₱ {st_bal_sheet:,.2f}
+--------------------------------------------------
+(+) TOTAL INCOME:                ₱ {all_inc:,.2f}
+(+) DONATIONS (RECEIVED):        ₱ {all_don_f:,.2f}
+(-) TOTAL EXPENSES:              ₱ {all_exp:,.2f}
+(-) DONATIONS (GIVEN OUT):       ₱ {all_don_t:,.2f}
+--------------------------------------------------
+REMAINING BALANCE:               ₱ {final_bal:,.2f}
+--------------------------------------------------
+        """)
 
-        if st.button("💾 Finalize & Save Report (Carry Over)"):
-            archive_row = pd.DataFrame([{"Council": st.session_state.current_user, "Archive_Date": datetime.now().strftime("%Y-%m-%d"), "Period": current_period, "Starting_Bal": st_bal_sheet, "Total_Inc": inc, "Don_Rcv": don_f, "Total_Exp": exp, "Don_Giv": don_t, "Remaining_Bal": final_bal}])
-            save_all_archives(pd.concat([load_archives(), archive_row], ignore_index=True))
-            # Delete entries and update carry-over
-            save_data(full_df[full_df["Council"] != st.session_state.current_user])
+        if st.button("💾 Finalize & Save Report (Carry Over Balance)"):
+            archive_row = pd.DataFrame([{
+                "Council": st.session_state.current_user,
+                "Archive_Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "Period": current_period,
+                "Starting_Bal": st_bal_sheet,
+                "Total_Inc": all_inc,
+                "Don_Rcv": all_don_f,
+                "Total_Exp": all_exp,
+                "Don_Giv": all_don_t,
+                "Remaining_Bal": final_bal
+            }])
+            df_arch = load_archives()
+            save_all_archives(pd.concat([df_arch, archive_row], ignore_index=True))
+            
+            # Reset Ledger for user and carry over balance
+            remaining_data = full_df[full_df["Council"] != st.session_state.current_user]
+            save_data(remaining_data)
             st.session_state.manual_start_val = final_bal
-            st.success("Report Saved and Balance Carried Over!")
+            
+            st.success(f"Report finalized! ₱{final_bal:,.2f} is now your new Starting Balance.")
             st.rerun()
 
     elif menu == "Archived Reports":
         st.title("📁 Saved Reports")
         all_archives = load_archives()
-        user_archives = all_archives[all_archives["Council"] == st.session_state.current_user].copy()
+        user_archives = all_archives[all_archives["Council"] == st.session_state.current_user]
 
         if not user_archives.empty:
-            st.write("### Archive Management")
-            st.caption("Click a row to select a report to delete.")
-            
-            archive_selection = st.dataframe(
-                user_archives.drop(columns=["Council"]),
-                use_container_width=True,
-                on_select="rerun",
-                selection_mode="single_row"
+            st.subheader("Manage Saved Records")
+            # Select which archived report to delete
+            report_to_manage = st.selectbox(
+                "Select a Saved Report to Delete:",
+                options=user_archives.index.tolist(),
+                format_func=lambda x: f"Period: {user_archives.loc[x, 'Period']} (Saved on {user_archives.loc[x, 'Archive_Date']})"
             )
 
-            if archive_selection.selection.rows:
-                arc_idx = user_archives.index[archive_selection.selection.rows[0]]
-                report_name = user_archives.loc[arc_idx, 'Period']
-                if st.button(f"🗑️ Delete Saved Report ({report_name})", type="primary"):
-                    save_all_archives(all_archives.drop(arc_idx))
-                    st.rerun()
+            if st.button("🗑️ Delete Saved Report", type="primary"):
+                # Drop from the full archive list and save
+                updated_archives = all_archives.drop(report_to_manage)
+                save_all_archives(updated_archives)
+                st.warning("Saved report deleted.")
+                st.rerun()
+
+            st.divider()
+            st.dataframe(user_archives.drop(columns=["Council"]), use_container_width=True)
         else:
-            st.info("No saved reports.")
+            st.info("No saved reports found.")
 
     elif menu == "About":
         st.title("About")
-        st.info("Student Council Finance Tracker with Row Selection, Deletion, and Balance Carry-over.")
+        st.info("Finance System with Period Closing, Automated Carry-over, and Archive Management.")
