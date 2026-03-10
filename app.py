@@ -14,9 +14,6 @@ ARCHIVE_FILE = "archived_reports.csv"
 COUNCIL_CREDENTIALS = {
     "ICSSC - Institute of Computer Studies Student Council": "ics123",
     "SSC - Supreme Student Council": "ssc123",
-    "JPCS - Junior Philippine Computer Society": "jpcs123",
-    "ITSO - IT Society Organization": "itso123",
-    "Other Organization": "admin123"
 }
 
 def load_data():
@@ -52,7 +49,7 @@ if "current_user" not in st.session_state:
 # LOGIN PAGE
 # -------------------------
 if not st.session_state.logged_in:
-    st.title("🔐 Council Finance Login")
+    st.title("Council Finance Login")
     selected_council = st.selectbox("Select Council / Organization", list(COUNCIL_CREDENTIALS.keys()))
     password = st.text_input("Enter Password", type="password")
     if st.button("Login"):
@@ -79,7 +76,7 @@ else:
     user_df["Amount"] = pd.to_numeric(user_df["Amount"], errors='coerce').fillna(0)
 
     if menu == "Monthly Ledger":
-        st.title(f"📒 Ledger: {st.session_state.current_user}")
+        st.title(f"Financial Report: {st.session_state.current_user}")
         
         col_m, col_y, col_s = st.columns([1, 1, 1])
         with col_m:
@@ -153,7 +150,7 @@ else:
                     st.rerun()
 
     elif menu == "Balance Sheet":
-        st.title("📊 Financial Position Summary")
+        st.title("Financial Summary")
         st_bal_sheet = st.session_state.get('manual_start_val', 0.0)
         current_period = st.session_state.get('current_period', "Current Month")
         
@@ -179,7 +176,7 @@ REMAINING BALANCE:               ₱ {final_bal:,.2f}
 --------------------------------------------------
         """)
 
-        if st.button("💾 Save / Archive This Report"):
+        if st.button("Save This Report"):
             archive_row = pd.DataFrame([{
                 "Council": st.session_state.current_user,
                 "Archive_Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -198,7 +195,7 @@ REMAINING BALANCE:               ₱ {final_bal:,.2f}
             st.success(f"Report for {current_period} archived!")
 
     elif menu == "Archived Reports":
-        st.title("📁 Archived Reports")
+        st.title("📁 Saved Reports")
         archives = load_archives()
         user_archives = archives[archives["Council"] == st.session_state.current_user]
         if not user_archives.empty:
