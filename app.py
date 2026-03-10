@@ -1,12 +1,14 @@
 import streamlit as st
 import pandas as pd
+import os
 
 st.set_page_config(page_title="Student Council Finance Tracker", layout="wide")
 
 # -------------------------
 # DATABASE / CONFIG
 # -------------------------
-# Define passwords for each council
+DB_FILE = "finance_data.csv"
+
 COUNCIL_CREDENTIALS = {
     "ICSSC - Institute of Computer Studies Student Council": "ics123",
     "SSC - Supreme Student Council": "ssc123",
@@ -17,277 +19,172 @@ COUNCIL_CREDENTIALS = {
 
 councils = list(COUNCIL_CREDENTIALS.keys())
 
+def load_data():
+    if os.path.exists(DB_FILE):
+        return pd.read_csv(DB_FILE)
+    return pd.DataFrame(columns=["Council", "Date", "Type", "Category", "Description", "Amount"])
+
+def save_data(df):
+    df.to_csv(DB_FILE, index=False)
+
 # -------------------------
-# SESSION STORAGE INITIALIZATION
+# SESSION STORAGE
 # -------------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "current_user" not in st.session_state:
     st.session_state.current_user = None
-if "reports" not in st.session_state:
-    st.session_state.reports = {}
 if "transactions" not in st.session_state:
-    st.session_state.transactions = pd.DataFrame(
-        columns=["Council", "Date", "Type", "Category", "Description", "Amount"]
-    )
+    st.session_state.transactions = load_data()
 
 # -------------------------
-# LOGIN SECTION
-# -------------------------
-def login_page():
-    st.title("🔐 Council Finance Login")
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        selected_council = st.selectbox("Select Council / Organization", councils)
-        password = st.text_input("Enter Password", type="password")
-        
-        if st.button("Login"):
-            if password == COUNCIL_CREDENTIALS.get(selected_council):
-                st.session_state.logged_in = True
-                st.session_state.current_user = selected_council
-                st.success(f"Welcome, {selected_council}!")
-                st.rerun()
-            else:
-                st.error("Incorrect password. Please try again.")
-
-# -------------------------
-# MAIN APP LOGIC
+# LOGIN PAGE
 # -------------------------
 if not st.session_state.logged_in:
-    login_page()
+    st.title("🔐 Council Finance Login")
+    selected_council = st.selectbox("Select Council / Organization", councils)
+    password = st.text_input("Enter Password", type="password")
+    if st.button("Login"):
+        if password == COUNCIL_CREDENTIALS.get(selected_council):
+            st.session_state.logged_in = True
+            st.session_state.current_user = selected_council
+            st.rerun()
+        else:
+            st.error("Incorrect password.")
 else:
-    # Sidebar logout and info
+    # -------------------------
+    # AUTHENTICATED APP
+    # -------------------------
     st.sidebar.title(f"👤 {st.session_state.current_user}")
     if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
         st.session_state.current_user = None
         st.rerun()
 
-    menu = st.sidebar.radio(
-        "Navigation",
-        ["Monthly Ledger", "Financial Statements", "Saved Reports", "About"]
-    )
+    menu = st.sidebar.radio("Navigation", ["Monthly Ledger", "Financial Statements", "About"])
 
-    # -------------------------
-    # MONTHLY LEDGER
-    # -------------------------
+    # Filter data for current user
+    full_df = st.session_state.transactions
+    user_df = full_df[full_df["Council"] == st.session_state.current_user].copy()
+    user_df["Amount"] = pd.to_numeric(user_df["Amount"], errors='coerce').fillna(0)
+
     if menu == "Monthly Ledger":
-        st.title(f"📒 {st.session_state.current_user} Ledger")
+        st.title(f"📒 Ledger: {st.session_state.current_user}")
         
-        month = st.selectbox(
-            "Select Month",
-            ["January","February","March","April","May","June",
-             "July","August","September","October","November","December"]
-        )
+        with st.expander("➕ Add New Transaction"):
+            c1, c2, c3 = st.columns(3)
+            with c1: date = st.date_input("Date")
+            with c2: t_type = st.selectbox("Type", ["Income", "Expense"])
+            with c3: category = st.text_input("Category (e.g., Supplies, Donation)")
+            
+            desc = st.text_input("Description")
+            amt_in = st.text_input("Amount (PHP)", "0")
 
-        starting_balance_input = st.text_input("Starting Balance (Beginning of Month)", "0")
-        try:
-            starting_balance = float(starting_balance_input.replace(",", ""))
-        except ValueError:
-            starting_balance = 0.0
+            if st.button("Save Transaction"):
+                try:
+                    new_row = pd.DataFrame([{
+                        "Council": st.session_state.current_user,
+                        "Date": str(date),
+                        "Type": t_type,
+                        "Category": category,
+                        "Description": desc,
+                        "Amount": float(amt_in.replace(",", ""))
+                    }])
+                    st.session_state.transactions = pd.concat([st.session_state.transactions, new_row], ignore_index=True)
+                    save_data(st.session_state.transactions)
+                    st.success("Saved!")
+                    st.rerun()
+                except: st.error("Invalid Amount")
 
-        st.subheader("Add New Transaction")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1: date = st.date_input("Date")
-        with col2: t_type = st.selectbox("Type", ["Income", "Expense"])
-        with col3: category = st.text_input("Category")
-        with col4: amount_input = st.text_input("Amount (₱)", "0")
-        
-        desc = st.text_input("Description")
-
-        try:
-            amount = float(amount_input.replace(",", ""))
-        except:
-            amount = 0.0
-
-        if st.button("Add Transaction"):
-            new_row = pd.DataFrame([{
-                "Council": st.session_state.current_user, # Locked to logged in user
-                "Date": date,
-                "Type": t_type,
-                "Category": category,
-                "Description": desc,
-                "Amount": amount
-            }])
-            st.session_state.transactions = pd.concat([st.session_state.transactions, new_row], ignore_index=True)
-            st.success("Transaction added!")
+        st.subheader("Records")
+        edited_df = st.data_editor(user_df, num_rows="dynamic", use_container_width=True)
+        if st.button("Sync Changes"):
+            others = full_df[full_df["Council"] != st.session_state.current_user]
+            st.session_state.transactions = pd.concat([others, edited_df], ignore_index=True)
+            save_data(st.session_state.transactions)
             st.rerun()
 
-        st.divider()
-        
-        # Filter data ONLY for the logged-in council
-        full_df = st.session_state.transactions
-        filtered_df = full_df[full_df["Council"] == st.session_state.current_user].copy()
-
-        st.subheader("Ledger Table")
-        edited_df = st.data_editor(filtered_df, num_rows="dynamic", use_container_width=True)
-
-        if st.button("Save Table Changes"):
-            other_councils = full_df[full_df["Council"] != st.session_state.current_user]
-            st.session_state.transactions = pd.concat([other_councils, edited_df], ignore_index=True)
-            st.success("Changes saved!")
-            st.rerun()
-
-        # Calculations
-        edited_df["Amount"] = pd.to_numeric(edited_df["Amount"], errors='coerce').fillna(0)
-        total_income = edited_df[edited_df["Type"] == "Income"]["Amount"].sum()
-        total_expense = edited_df[edited_df["Type"] == "Expense"]["Amount"].sum()
-        ending_balance = starting_balance + total_income - total_expense
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Income", f"₱ {total_income:,.2f}")
-        c2.metric("Total Expense", f"₱ {total_expense:,.2f}")
-        c3.metric("Ending Balance", f"₱ {ending_balance:,.2f}")
-
-        if st.button("Save Monthly Report"):
-            key = f"{st.session_state.current_user}_{month}"
-            st.session_state.reports[key] = edited_df.copy()
-            st.success(f"Report for {month} archived.")
-
-    # -------------------------
-    # FINANCIAL STATEMENTS
-    # -------------------------
     elif menu == "Financial Statements":
-        st.title(f"📊 {st.session_state.current_user} Statements")
-        
-        df = st.session_state.transactions[
-            st.session_state.transactions["Council"] == st.session_state.current_user
-        ].copy()
+        st.title("📊 Financial Reports")
+        report_type = st.tabs(["Income Statement", "Balance Sheet"])
 
-        month_selected = st.selectbox("Select Month", ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"])
-        year_selected = st.number_input("Year", value=2026)
-
-        df["Amount"] = pd.to_numeric(df["Amount"], errors='coerce').fillna(0)
-        total_income = df[df["Type"] == "Income"]["Amount"].sum()
-        total_expense = df[df["Type"] == "Expense"]["Amount"].sum()
+        # Calculations for Reports
+        total_income = user_df[user_df["Type"] == "Income"]["Amount"].sum()
+        total_expense = user_df[user_df["Type"] == "Expense"]["Amount"].sum()
         net_income = total_income - total_expense
 
-        st.code(f"""
+        with report_type[0]:
+            st.subheader("Statement of Comprehensive Income")
+            st.code(f"""
 {st.session_state.current_user}
-STATEMENT OF COMPREHENSIVE INCOME
-For the Month Ended {month_selected} {year_selected}
+For the period ended 2025
 
-Revenue:            ₱ {total_income:,.2f}
-Expenses:           ₱ {total_expense:,.2f}
--------------------------------------
-NET INCOME:         ₱ {net_income:,.2f}
-        """)
+Total Revenue:          PHP {total_income:,.2f}
+Total Expenses:         PHP {total_expense:,.2f}
+------------------------------------------
+NET INCOME:             PHP {net_income:,.2f}
+            """)
 
-    SUPREME STUDENT COUNCIL
-STATEMENT OF COMPREHENSIVE INCOME
-For the Month Ended {month_selected} 31, {year_selected}
+        with report_type[1]:
+            st.subheader("Statement of Financial Position")
+            
+            # Manual inputs for balance sheet items not in ledger
+            col_a, col_b = st.columns(2)
+            with col_a:
+                cash_coop = st.number_input("Cash on Coop (Note 2)", value=21000.0)
+                supplies = st.number_input("Supplies (Note 3)", value=1000.0)
+                equip_cost = st.number_input("Equipment Cost (Note 4)", value=10000.0)
+            with col_b:
+                useful_life = st.number_input("Useful Life (Years)", value=10)
+                donations = st.number_input("Donations (Note 9)", value=0.0)
 
-Service Revenue (Note 1)           ₱ {total_income:,.2f}
-Add: Other Income (Note 2)         ₱ 0.00
-Less: Operating Expenses (Note 3)  ₱ {total_expense:,.2f}
-Net Income                        ₱ {net_income:,.2f}
+            # Logic for Note 5: Depreciation
+            acc_dep = (equip_cost / useful_life) if useful_life > 0 else 0
+            net_equip = equip_cost - acc_dep
+            
+            # Note 1: Cash on Hand (Assuming ledger tracks cash)
+            cash_on_hand = net_income # Simplified: Net income represents cash flow here
+            
+            total_assets = cash_on_hand + cash_coop + supplies + net_equip
+            total_equity = total_assets # Accounting Equation A = L + E
 
-Note 1: Net Sales
-"""
-        if not income_items.empty:
-            for idx, row in income_items.iterrows():
-                statement_income += f"\t{row['Category']:<25} ₱ {row['Amount']:,.2f}\n"
-        else:
-            statement_income += "\tNone recorded              ₱ 0.00\n"
-        statement_income += f"Total Net Sales                ₱ {total_income:,.2f}\n\n"
-
-        statement_income += "Note 2: Other Income\n\tNone recorded              ₱ 0.00\nTotal Other Income            ₱ 0.00\n\n"
-
-        statement_income += "Note 3: Operating Expenses\n"
-        if not expense_items.empty:
-            for idx, row in expense_items.iterrows():
-                statement_income += f"\t{row['Category']:<25} ₱ {row['Amount']:,.2f}\n"
-        else:
-            statement_income += "\tNone recorded              ₱ 0.00\n"
-        statement_income += f"Total Operating Expenses      ₱ {total_expense:,.2f}\n"
-
-        st.text(statement_income)
-
-    # -------------------------
-    # Statement of Council’s Equity
-    # -------------------------
-    st.subheader("Statement of Council’s Equity")
-    beginning_equity = st.number_input(
-        "ICSSC’s Equity, Beginning", min_value=0.0, value=25689.02
-    )
-    ending_equity = beginning_equity + total_income - total_expense
-    statement_equity = f"""
-INSTITUTE OF COMPUTER STUDIES - STUDENT COUNCIL
-STATEMENT OF COUNCIL’S EQUITY
-As of TechConnect {year_selected}
-
-ICSSC’s Equity, Beginning                ₱ {beginning_equity:>12,.2f}
-    Less:   Expenses                      ₱ {total_expense:>12,.2f}
-ICSSC’s Equity, Ending                   ₱ {ending_equity:>12,.2f}
-"""
-    st.text(statement_equity)
-
-    # -------------------------
-    # Statement of Financial Position
-    # -------------------------
-    st.subheader("Statement of Financial Position")
-    cash_coop = 0.0
-    supplies = 3890.50
-    equipment = 10250.00
-    accumulated_dep = 2050.00
-    accounts_payable = 0.0
-    unearned_income = 0.0
-    donations = 0.0
-
-    total_current_assets = cash_on_hand + cash_coop + supplies
-    total_noncurrent_assets = equipment - accumulated_dep
-    total_assets = total_current_assets + total_noncurrent_assets
-    total_equity = total_assets
-
-    statement_position = f"""
-INSTITUTE OF COMPUTER STUDIES - STUDENT COUNCIL
+            st.code(f"""
+{st.session_state.current_user}
 STATEMENT OF FINANCIAL POSITION
-As of {month_selected} {year_selected}
+As of August 2025
 
 ASSETS
 Current Assets
-    Cash on Hand (Note 1)               ₱ {cash_on_hand:>12,.2f}
-    Cash on Coop (Note 2)               ₱ {cash_coop:>12,.2f}
-    Supplies (Note 3)                   ₱ {supplies:>12,.2f}
-Total Current Assets                     ₱ {total_current_assets:>12,.2f}
+    Cash on Hand (Note 1)              PHP {cash_on_hand:,.2f}
+    Cash on Coop (Note 2)                  {cash_coop:,.2f}
+    Supplies (Note 3)                      {supplies:,.2f}
+Total Current Assets                   PHP {(cash_on_hand + cash_coop + supplies):,.2f}
+
 Noncurrent Assets
-    Equipment (Note 4)                  ₱ {equipment:>12,.2f}
-    Accumulated Depreciation (Note 5)   ₱ ({accumulated_dep:>10,.2f})
-Total Noncurrent Assets                 ₱ {total_noncurrent_assets:>12,.2f}
-TOTAL ASSETS                            ₱ {total_assets:>12,.2f}
+    Equipment (Note 4)                     {equip_cost:,.2f}
+    Acc. Depreciation (Note 5)            ({acc_dep:,.2f})
+Total Noncurrent Assets                    {net_equip:,.2f}
+---------------------------------------------------------
+TOTAL ASSETS                           PHP {total_assets:,.2f}
 
 LIABILITIES AND EQUITY
 Liabilities
-    Accounts Payable (Note 6)           ₱ {accounts_payable:>12,.2f}
-    Unearned Income (Note 7)            ₱ {unearned_income:>12,.2f}
-Total Liabilities                        ₱ {accounts_payable + unearned_income:>12,.2f}
+    Accounts Payable (Note 6)              0.00
+    Unearned Income (Note 7)               0.00
+Total Liabilities                          0.00
+
 Equity
-    ICSSC, Capital (Note 8)             ₱ {total_assets:>12,.2f}
-    Donations (Note 9)                   ₱ {donations:>12,.2f}
-Total Equity                             ₱ {total_equity:>12,.2f}
-TOTAL LIABILITIES AND EQUITY            ₱ {total_assets:>12,.2f}
-"""
-    st.text(statement_position)
+    SSC Capital (Note 8)                   {total_equity - donations:,.2f}
+    Donations (Note 9)                     {donations:,.2f}
+Total Equity                               {total_equity:,.2f}
+---------------------------------------------------------
+TOTAL LIABILITIES AND EQUITY           PHP {total_assets:,.2f}
+            """)
 
+            with st.expander("View Notes to Financial Statements"):
+                st.write(f"**Note 5:** Cost (PHP {equip_cost:,.2f}) / Life ({useful_life}) = PHP {acc_dep:,.2f}")
+                st.write(f"**Note 8:** Calculated as Total Net Assets.")
 
-    # -------------------------
-    # SAVED REPORTS
-    # -------------------------
-    elif menu == "Saved Reports":
-        st.title("📁 Your Archived Reports")
-        user_reports = {k: v for k, v in st.session_state.reports.items() if k.startswith(st.session_state.current_user)}
-        
-        if user_reports:
-            for key, data in user_reports.items():
-                with st.expander(f"Report: {key.replace(st.session_state.current_user + '_', '')}"):
-                    st.dataframe(data, use_container_width=True)
-        else:
-            st.info("No reports saved for this council yet.")
-
-    # -------------------------
-    # ABOUT
-    # -------------------------
     elif menu == "About":
         st.title("About")
-        st.write("Secure Finance Tracking System for Student Organizations.")
+        st.info("Custom Finance System for SSC. Uses Philippine Peso (PHP) formatting.")
