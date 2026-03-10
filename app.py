@@ -70,7 +70,6 @@ else:
         with col_y:
             year_selected = st.number_input("Year", value=2026)
         with col_s:
-            # Monthly Ledger starts at 0 as requested
             ledger_start_bal = st.number_input("Beginning Balance (₱)", value=0.0)
 
         st.session_state.current_period = f"{datetime(2026, month_selected, 1).strftime('%B')} {year_selected}"
@@ -84,7 +83,6 @@ else:
         curr_don_t = this_month_df[this_month_df["Type"] == "Donation (To)"]["Amount"].sum()
         curr_exp = this_month_df[this_month_df["Type"] == "Expense"]["Amount"].sum()
         
-        # Fixed NameError: using ledger_start_bal instead of starting_bal
         rem_bal = ledger_start_bal + curr_inc + curr_don_f - curr_exp - curr_don_t
 
         st.subheader(f"Current Activity for {st.session_state.current_period}")
@@ -126,7 +124,6 @@ else:
 
     elif menu == "Balance Sheet":
         st.title("Financial Records")
-        # Pulls the actual carried-over balance from the session
         st_bal_sheet = st.session_state.manual_start_val
         current_period = st.session_state.get('current_period', "Current Month")
 
@@ -171,8 +168,6 @@ TOTAL BALANCE:                   ₱ {final_bal:,.2f}
         if st.button("Finalize & Save Report"):
             archive_key = f"{st.session_state.current_user}_{current_period}_{datetime.now().strftime('%H%M%S')}"
             st.session_state.reports[archive_key] = user_df.copy()
-            
-            # Carry the balance forward for the Balance Sheet, but clear the transactions
             st.session_state.transactions = full_df[full_df["Council"] != st.session_state.current_user]
             st.session_state.manual_start_val = final_bal
             st.success(f"Report finalized! ₱{final_bal:,.2f} is stored as your Carry-Over Balance.")
@@ -202,30 +197,23 @@ TOTAL BALANCE:                   ₱ {final_bal:,.2f}
     elif menu == "About":
         st.title("About")
         st.info("Finance Tracker: Independent Ledger and Cumulative Balance Sheet logic.")
+        
+        st.markdown("""
+        ### Student Council Financial Reports Tracker
 
-st.title("About the Application")
+        The **Student Council Financial Reports Tracker** is a digital tool designed to help student councils and organizations efficiently record, monitor, and manage their financial activities. This application simplifies the process of tracking income, expenses, and financial balances while automatically generating organized financial reports.
 
-st.write("""
-### Student Council Financial Reports Tracker
+        ### Key Features
+        • Record monthly income and expenses  
+        • Automatic calculation of balances and totals  
+        • Editable transaction ledger  
+        • Financial statement generation  
+        • Multi-organization tracking  
+        • Organized monthly financial reports  
 
-The **Student Council Financial Reports Tracker** is a digital tool designed to help student councils and organizations efficiently record, monitor, and manage their financial activities. This application simplifies the process of tracking income, expenses, and financial balances while automatically generating organized financial reports.
+        ### Purpose
+        This application was developed to support **student leaders, treasurers, and council officers** in managing their finances more efficiently and responsibly. It promotes proper financial documentation, transparency, and accountability within student organizations.
 
-The system allows councils to maintain accurate records of their transactions, ensuring transparency and accountability in handling organizational funds. By automating financial calculations and report generation, the application helps student leaders focus more on planning activities and serving the student body rather than manually preparing financial documents.
-
-### Key Features
-• Record monthly income and expenses  
-• Automatic calculation of balances and totals  
-• Editable transaction ledger  
-• Financial statement generation  
-• Multi-organization tracking  
-• Organized monthly financial reports  
-
-### Purpose
-This application was developed to support **student leaders, treasurers, and council officers** in managing their finances more efficiently and responsibly. It promotes proper financial documentation, transparency, and accountability within student organizations.
-
-### Developed For
-Student Councils and Organizations that need a **simple, reliable, and organized system for financial reporting**.
-
-### Developer
-This application was created as a financial management tool to assist student councils in preparing clear and accurate financial reports for their activities and projects.
-""")
+        ### Developer
+        This application was created as a financial management tool to assist student councils in preparing clear and accurate financial reports for their activities and projects.
+        """)
