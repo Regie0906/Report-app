@@ -11,17 +11,19 @@ st.set_page_config(page_title="Student Council Finance Tracker", layout="wide")
 DB_FILE = "finance_data.csv"
 ARCHIVE_FILE = "archived_reports.csv"
 
-COUNCIL_CREDENTIALS = {
-    "ICSSC - Institute of Computer Studies Student Council": "ics123",
-    "SSC - Supreme Student Council": "ssc123",
-}
+COUNCILS = [
+    "ICSSC - Institute of Computer Studies Student Council",
+    "SSC - Supreme Student Council",
+    "JPCS - Junior Philippine Computer Society",
+    "ITSO - IT Society Organization",
+    "Other Organization"
+]
 
 def load_data():
     if os.path.exists(DB_FILE):
         try:
             df = pd.read_csv(DB_FILE)
             df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
-            # Safety check: Ensure "Council" column exists to prevent KeyError
             if "Council" not in df.columns:
                 return pd.DataFrame(columns=["Council", "Date", "Type", "Category", "Description", "Amount"])
             return df
@@ -44,21 +46,19 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "current_user" not in st.session_state:
     st.session_state.current_user = None
+if "manual_start_val" not in st.session_state:
+    st.session_state.manual_start_val = 0.0
 
 # -------------------------
 # LOGIN PAGE
 # -------------------------
 if not st.session_state.logged_in:
     st.title("Council Finance Login")
-    selected_council = st.selectbox("Select Council / Organization", list(COUNCIL_CREDENTIALS.keys()))
-    password = st.text_input("Enter Password", type="password")
+    selected_council = st.selectbox("Select Council / Organization", COUNCILS)
     if st.button("Login"):
-        if password == COUNCIL_CREDENTIALS.get(selected_council):
-            st.session_state.logged_in = True
-            st.session_state.current_user = selected_council
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
+        st.session_state.logged_in = True
+        st.session_state.current_user = selected_council
+        st.rerun()
 else:
     # -------------------------
     # AUTHENTICATED APP
@@ -66,12 +66,12 @@ else:
     st.sidebar.title(f"👤 {st.session_state.current_user}")
     if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
+        st.session_state.current_user = None
         st.rerun()
 
     menu = st.sidebar.radio("Navigation", ["Monthly Ledger", "Balance Sheet", "Archived Reports", "About"])
 
     full_df = load_data()
-    # Fixed KeyError: filtering by council safely
     user_df = full_df[full_df["Council"] == st.session_state.current_user].copy()
     user_df["Amount"] = pd.to_numeric(user_df["Amount"], errors='coerce').fillna(0)
 
@@ -87,13 +87,10 @@ else:
             year_selected = st.number_input("Year", value=2026)
         
         with col_s:
-            start_input = st.text_input("Enter Starting Balance (₱)", "0")
-            try:
-                st_bal = float(start_input.replace(",", ""))
-            except:
-                st_bal = 0.0
+            # Auto-populated from carry-over, but still editable
+            st_bal = st.number_input("Starting Balance (₱)", value=float(st.session_state.manual_start_val))
+            st.session_state.manual_start_val = st_bal
 
-        st.session_state.manual_start_val = st_bal
         st.session_state.current_period = f"{datetime(2026, month_selected, 1).strftime('%B')} {year_selected}"
 
         this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & 
@@ -115,39 +112,51 @@ else:
 
         st.divider()
 
+        # TRANSACTION MANAGEMENT
+        st.subheader("Manage Records")
+        if not this_month_df.empty:
+            # Selection box to choose a specific item
+            selected_item_idx = st.selectbox(
+                "Select a record item to manage:", 
+                options=this_month_df.index.tolist(),
+                format_func=lambda x: f"{this_month_df.loc[x, 'Date'].strftime('%Y-%m-%d')} | {this_month_df.loc[x, 'Type']} | {this_month_df.loc[x, 'Description']} (₱{this_month_df.loc[x, 'Amount']:,.2f})"
+            )
+            
+            act1, act2, _ = st.columns([1, 1, 2])
+            with act1:
+                if st.button("🗑️ Delete Selected"):
+                    save_data(full_df.drop(selected_item_idx))
+                    st.success("Record deleted.")
+                    st.rerun()
+            with act2:
+                if st.button("📥 Archive Selected"):
+                    # Individual archive logic could go here, for now it confirms index
+                    st.info("Item flagged for archive. Use Balance Sheet for full period saving.")
+
+            st.dataframe(this_month_df[["Date", "Type", "Category", "Description", "Amount"]], use_container_width=True)
+        else:
+            st.info("No records for this period.")
+
         with st.expander("➕ Add New Transaction"):
             c1, c2, c3 = st.columns(3)
             with c1: t_date = st.date_input("Date")
             with c2: t_type = st.selectbox("Type", ["Income", "Expense", "Donation (From)", "Donation (To)"])
             with c3: category = st.text_input("Category")
             desc = st.text_input("Description")
-            amt_str = st.text_input("Amount (₱)", "0")
+            amt_val = st.number_input("Amount (₱)", min_value=0.0, step=100.0)
 
             if st.button("Add Entry"):
-                try:
-                    amt_val = float(amt_str.replace(",", ""))
-                    new_row = pd.DataFrame([{
-                        "Council": st.session_state.current_user,
-                        "Date": t_date,
-                        "Type": t_type,
-                        "Category": category,
-                        "Description": desc,
-                        "Amount": amt_val
-                    }])
-                    save_data(pd.concat([load_data(), new_row], ignore_index=True))
-                    st.success("Entry Saved!")
-                    st.rerun()
-                except: st.error("Invalid amount.")
-
-        st.subheader("Monthly Transaction History")
-        if not this_month_df.empty:
-            st.dataframe(this_month_df[["Date", "Type", "Category", "Description", "Amount"]], use_container_width=True)
-            with st.expander("🗑️ Delete a Transaction"):
-                to_delete = st.selectbox("Select Index to Delete", options=this_month_df.index.tolist(),
-                                         format_func=lambda x: f"Idx {x}: {this_month_df.loc[x, 'Description']} (₱{this_month_df.loc[x, 'Amount']:,.2f})")
-                if st.button("Confirm Delete", type="primary"):
-                    save_data(load_data().drop(to_delete))
-                    st.rerun()
+                new_row = pd.DataFrame([{
+                    "Council": st.session_state.current_user,
+                    "Date": t_date,
+                    "Type": t_type,
+                    "Category": category,
+                    "Description": desc,
+                    "Amount": amt_val
+                }])
+                save_data(pd.concat([load_data(), new_row], ignore_index=True))
+                st.success("Entry Saved!")
+                st.rerun()
 
     elif menu == "Balance Sheet":
         st.title("Financial Summary")
@@ -176,7 +185,8 @@ REMAINING BALANCE:               ₱ {final_bal:,.2f}
 --------------------------------------------------
         """)
 
-        if st.button("Save This Report"):
+        if st.button("💾 Finalize & Save Report (Carry Over Balance)"):
+            # 1. Archive the summary
             archive_row = pd.DataFrame([{
                 "Council": st.session_state.current_user,
                 "Archive_Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -188,11 +198,18 @@ REMAINING BALANCE:               ₱ {final_bal:,.2f}
                 "Don_Giv": all_don_t,
                 "Remaining_Bal": final_bal
             }])
-            # Save archive logic
             df_arch = load_archives()
-            df_arch = pd.concat([df_arch, archive_row], ignore_index=True)
-            df_arch.to_csv(ARCHIVE_FILE, index=False)
-            st.success(f"Report for {current_period} archived!")
+            pd.concat([df_arch, archive_row], ignore_index=True).to_csv(ARCHIVE_FILE, index=False)
+            
+            # 2. CLEAR the current ledger for this council
+            remaining_data = full_df[full_df["Council"] != st.session_state.current_user]
+            save_data(remaining_data)
+            
+            # 3. SET Carry-over balance
+            st.session_state.manual_start_val = final_bal
+            
+            st.success(f"Report finalized! {final_bal:,.2f} carried over as new Starting Balance.")
+            st.balloons()
 
     elif menu == "Archived Reports":
         st.title("📁 Saved Reports")
@@ -205,4 +222,4 @@ REMAINING BALANCE:               ₱ {final_bal:,.2f}
 
     elif menu == "About":
         st.title("About")
-        st.info("Finance System with Row Deletion and Archiving.")
+        st.info("Finance System with Period Closing and Balance Carry-over.")
