@@ -36,7 +36,10 @@ def save_data(df):
 
 def load_archives():
     if os.path.exists(ARCHIVE_FILE):
-        return pd.read_csv(ARCHIVE_FILE)
+        try:
+            return pd.read_csv(ARCHIVE_FILE)
+        except:
+            pass
     return pd.DataFrame(columns=["Council", "Archive_Date", "Period", "Starting_Bal", "Total_Inc", "Don_Rcv", "Total_Exp", "Don_Giv", "Remaining_Bal"])
 
 def save_all_archives(df):
@@ -53,7 +56,7 @@ if "manual_start_val" not in st.session_state:
     st.session_state.manual_start_val = 0.0
 
 # -------------------------
-# LOGIN PAGE
+# MAIN APP LOGIC
 # -------------------------
 if not st.session_state.logged_in:
     st.title("Council Finance Login")
@@ -69,9 +72,9 @@ else:
         st.rerun()
 
     menu = st.sidebar.radio("Navigation", ["Monthly Ledger", "Balance Sheet", "Archived Reports", "About"])
+    
     full_df = load_data()
     user_df = full_df[full_df["Council"] == st.session_state.current_user].copy()
-    user_df["Amount"] = pd.to_numeric(user_df["Amount"], errors='coerce').fillna(0)
 
     if menu == "Monthly Ledger":
         st.title(f"Financial Report: {st.session_state.current_user}")
@@ -89,42 +92,36 @@ else:
 
         st.session_state.current_period = f"{datetime(2026, month_selected, 1).strftime('%B')} {year_selected}"
 
-        this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & 
-                                (user_df["Date"].dt.year == year_selected)]
-        
-        # Calculations
-        rem_bal = st_bal + this_month_df[this_month_df["Type"].isin(["Income", "Donation (From)"])]["Amount"].sum() - \
-                  this_month_df[this_month_df["Type"].isin(["Expense", "Donation (To)"])]["Amount"].sum()
+        # Filter and calculate
+        this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & (user_df["Date"].dt.year == year_selected)].copy()
+        inc_sum = this_month_df[this_month_df["Type"].isin(["Income", "Donation (From)"])]["Amount"].sum()
+        exp_sum = this_month_df[this_month_df["Type"].isin(["Expense", "Donation (To)"])]["Amount"].sum()
+        rem_bal = st_bal + inc_sum - exp_sum
 
-        st.subheader(f"Financial Activity for {st.session_state.current_period}")
+        st.subheader(f"Activity for {st.session_state.current_period}")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("STARTING BALANCE", f"₱ {st_bal:,.2f}")
-        m2.metric("EXPENSES", f"₱ {this_month_df[this_month_df['Type'].isin(['Expense', 'Donation (To)'])]['Amount'].sum():,.2f}")
-        m3.metric("DONATIONS RECEIVED", f"₱ {this_month_df[this_month_df['Type'] == 'Donation (From)']['Amount'].sum():,.2f}")
-        m4.metric("REMAINING BALANCE", f"₱ {rem_bal:,.2f}")
+        m1.metric("STARTING", f"₱{st_bal:,.2f}")
+        m2.metric("EXPENSES", f"₱{exp_sum:,.2f}")
+        m3.metric("INCOME", f"₱{inc_sum:,.2f}")
+        m4.metric("REMAINING", f"₱{rem_bal:,.2f}")
 
         st.divider()
+        st.write("### Transaction History")
+        st.caption("Click a row below to select it, then the delete button will appear.")
 
-        # --- SELECTION & DELETE LOGIC ---
-        st.subheader("Transaction History")
-        st.info("💡 Click a row in the table below to select it for deletion.")
-        
-        # Using selection_mode="single_row"
-        event = st.dataframe(
+        # Updated selection logic to avoid the error in your screenshot
+        ledger_selection = st.dataframe(
             this_month_df[["Date", "Type", "Category", "Description", "Amount"]],
             use_container_width=True,
             on_select="rerun",
             selection_mode="single_row"
         )
 
-        selected_rows = event.selection.rows
-        if selected_rows:
-            # Get the actual index from the original dataframe based on table selection
-            actual_index = this_month_df.index[selected_rows[0]]
-            st.warning(f"You have selected: {this_month_df.loc[actual_index, 'Description']}")
+        # Show delete button ONLY if a row is selected
+        if ledger_selection.selection.rows:
+            selected_idx = this_month_df.index[ledger_selection.selection.rows[0]]
             if st.button("🗑️ Delete Selected Record", type="primary"):
-                save_data(full_df.drop(actual_index))
-                st.success("Record removed!")
+                save_data(full_df.drop(selected_idx))
                 st.rerun()
 
         with st.expander("➕ Add New Transaction"):
@@ -136,7 +133,7 @@ else:
             amt_val = st.number_input("Amount (₱)", min_value=0.0)
             if st.button("Add Entry"):
                 new_row = pd.DataFrame([{"Council": st.session_state.current_user, "Date": t_date, "Type": t_type, "Category": category, "Description": desc, "Amount": amt_val}])
-                save_data(pd.concat([load_data(), new_row], ignore_index=True))
+                save_data(pd.concat([full_df, new_row], ignore_index=True))
                 st.rerun()
 
     elif menu == "Balance Sheet":
@@ -155,6 +152,7 @@ else:
         if st.button("💾 Finalize & Save Report (Carry Over)"):
             archive_row = pd.DataFrame([{"Council": st.session_state.current_user, "Archive_Date": datetime.now().strftime("%Y-%m-%d"), "Period": current_period, "Starting_Bal": st_bal_sheet, "Total_Inc": inc, "Don_Rcv": don_f, "Total_Exp": exp, "Don_Giv": don_t, "Remaining_Bal": final_bal}])
             save_all_archives(pd.concat([load_archives(), archive_row], ignore_index=True))
+            # Delete entries and update carry-over
             save_data(full_df[full_df["Council"] != st.session_state.current_user])
             st.session_state.manual_start_val = final_bal
             st.success("Report Saved and Balance Carried Over!")
@@ -163,22 +161,28 @@ else:
     elif menu == "Archived Reports":
         st.title("📁 Saved Reports")
         all_archives = load_archives()
-        user_archives = all_archives[all_archives["Council"] == st.session_state.current_user]
+        user_archives = all_archives[all_archives["Council"] == st.session_state.current_user].copy()
 
         if not user_archives.empty:
-            st.info("💡 Click a row below to delete a past report.")
-            archive_event = st.dataframe(
+            st.write("### Archive Management")
+            st.caption("Click a row to select a report to delete.")
+            
+            archive_selection = st.dataframe(
                 user_archives.drop(columns=["Council"]),
                 use_container_width=True,
                 on_select="rerun",
                 selection_mode="single_row"
             )
 
-            archive_selection = archive_event.selection.rows
-            if archive_selection:
-                archive_idx = user_archives.index[archive_selection[0]]
-                if st.button(f"🗑️ Delete Report for {user_archives.loc[archive_idx, 'Period']}", type="primary"):
-                    save_all_archives(all_archives.drop(archive_idx))
+            if archive_selection.selection.rows:
+                arc_idx = user_archives.index[archive_selection.selection.rows[0]]
+                report_name = user_archives.loc[arc_idx, 'Period']
+                if st.button(f"🗑️ Delete Saved Report ({report_name})", type="primary"):
+                    save_all_archives(all_archives.drop(arc_idx))
                     st.rerun()
         else:
             st.info("No saved reports.")
+
+    elif menu == "About":
+        st.title("About")
+        st.info("Student Council Finance Tracker with Row Selection, Deletion, and Balance Carry-over.")
