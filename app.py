@@ -67,7 +67,6 @@ else:
     if menu == "Monthly Ledger":
         st.title(f"📒 Ledger: {st.session_state.current_user}")
         
-        # Selection and Editable Start
         col_m, col_y, col_s = st.columns([1, 1, 1])
         with col_m:
             month_selected = st.selectbox("Select Month", range(1, 13), 
@@ -77,40 +76,39 @@ else:
             year_selected = st.number_input("Year", value=2026)
         
         with col_s:
-            # MANUAL STARTING BALANCE INPUT
             start_input = st.text_input("Enter Starting Balance (₱)", "0")
             try:
-                # Remove commas and convert to float
-                starting_balance = float(start_input.replace(",", ""))
+                st_bal = float(start_input.replace(",", ""))
             except:
-                starting_balance = 0.0
+                st_bal = 0.0
 
-        # --- CALCULATIONS ---
+        st.session_state.manual_start_val = st_bal
+
+        # Filter current month
         this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & 
                                 (user_df["Date"].dt.year == year_selected)]
         
         curr_inc = this_month_df[this_month_df["Type"] == "Income"]["Amount"].sum()
-        curr_don = this_month_df[this_month_df["Type"] == "Donation"]["Amount"].sum()
+        curr_don_from = this_month_df[this_month_df["Type"] == "Donation (From)"]["Amount"].sum()
+        curr_don_to = this_month_df[this_month_df["Type"] == "Donation (To)"]["Amount"].sum()
         curr_exp = this_month_df[this_month_df["Type"] == "Expense"]["Amount"].sum()
         
-        # Remaining balance calculation
-        remaining_balance = starting_balance + curr_inc + curr_don - curr_exp
+        # Balance = Start + (Income + From) - (Expense + To)
+        rem_bal = st_bal + curr_inc + curr_don_from - curr_exp - curr_don_to
 
-        # Display Metrics (Formatted with .2f for automated cents)
         st.subheader(f"Financial Activity for {datetime(2026, month_selected, 1).strftime('%B %Y')}")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("STARTING BALANCE", f"₱ {starting_balance:,.2f}")
-        m2.metric("EXPENSE", f"₱ {curr_exp:,.2f}")
-        m3.metric("DONATION", f"₱ {curr_don:,.2f}")
-        m4.metric("REMAINING BALANCE", f"₱ {remaining_balance:,.2f}")
+        m1.metric("STARTING BALANCE", f"₱ {st_bal:,.2f}")
+        m2.metric("EXPENSES", f"₱ {(curr_exp + curr_don_to):,.2f}")
+        m3.metric("DONATIONS RECEIVED", f"₱ {curr_don_from:,.2f}")
+        m4.metric("REMAINING BALANCE", f"₱ {rem_bal:,.2f}")
 
         st.divider()
 
-        # --- INPUT SECTION ---
         with st.expander("➕ Add New Transaction"):
             c1, c2, c3 = st.columns(3)
             with c1: t_date = st.date_input("Date")
-            with c2: t_type = st.selectbox("Type", ["Income", "Expense", "Donation"])
+            with c2: t_type = st.selectbox("Type", ["Income", "Expense", "Donation (From)", "Donation (To)"])
             with c3: category = st.text_input("Category")
             
             desc = st.text_input("Description")
@@ -118,7 +116,6 @@ else:
 
             if st.button("Add Entry"):
                 try:
-                    # Automatically ensures numeric storage
                     amt_val = float(amt_str.replace(",", ""))
                     new_row = pd.DataFrame([{
                         "Council": st.session_state.current_user,
@@ -128,47 +125,41 @@ else:
                         "Description": desc,
                         "Amount": amt_val
                     }])
-                    updated_full = pd.concat([load_data(), new_row], ignore_index=True)
-                    save_data(updated_full)
-                    st.success(f"Recorded: ₱ {amt_val:,.2f}")
+                    save_data(pd.concat([load_data(), new_row], ignore_index=True))
+                    st.success("Entry Saved!")
                     st.rerun()
-                except: st.error("Please enter a valid amount.")
+                except: st.error("Invalid amount.")
 
-        st.divider()
-
-        # --- HISTORY & DELETE SECTION ---
         st.subheader("Monthly Transaction History")
         if not this_month_df.empty:
-            # Display history with automated cents formatting
-            formatted_history = this_month_df[["Date", "Type", "Category", "Description", "Amount"]].copy()
-            st.dataframe(formatted_history, use_container_width=True)
-            
+            st.dataframe(this_month_df[["Date", "Type", "Category", "Description", "Amount"]], use_container_width=True)
             with st.expander("🗑️ Delete a Transaction"):
-                delete_options = this_month_df.index.tolist()
-                to_delete = st.selectbox("Select Index to Delete", options=delete_options,
+                to_delete = st.selectbox("Select Index to Delete", options=this_month_df.index.tolist(),
                                          format_func=lambda x: f"Idx {x}: {this_month_df.loc[x, 'Description']} (₱{this_month_df.loc[x, 'Amount']:,.2f})")
                 if st.button("Confirm Delete", type="primary"):
-                    full_df_latest = load_data()
-                    full_df_latest = full_df_latest.drop(to_delete)
-                    save_data(full_df_latest)
-                    st.warning("Transaction deleted.")
+                    save_data(load_data().drop(to_delete))
                     st.rerun()
-        else:
-            st.info("No records found for the selected month.")
 
     elif menu == "Balance Sheet":
         st.title("📊 Financial Position Summary")
+        st_bal_sheet = st.session_state.get('manual_start_val', 0.0)
+        
         all_inc = user_df[user_df["Type"] == "Income"]["Amount"].sum()
-        all_don = user_df[user_df["Type"] == "Donation"]["Amount"].sum()
+        all_don_f = user_df[user_df["Type"] == "Donation (From)"]["Amount"].sum()
+        all_don_t = user_df[user_df["Type"] == "Donation (To)"]["Amount"].sum()
         all_exp = user_df[user_df["Type"] == "Expense"]["Amount"].sum()
-        final_bal = all_inc + all_don - all_exp
+        
+        final_bal = st_bal_sheet + all_inc + all_don_f - all_exp - all_don_t
 
         st.code(f"""
 {st.session_state.current_user}
 --------------------------------------------------
-TOTAL INCOME:                    ₱ {all_inc:,.2f}
-TOTAL DONATIONS:                 ₱ {all_don:,.2f}
-TOTAL EXPENSES:                  ₱ {all_exp:,.2f}
+STARTING BALANCE:                ₱ {st_bal_sheet:,.2f}
+--------------------------------------------------
+(+) TOTAL INCOME:                ₱ {all_inc:,.2f}
+(+) DONATIONS (RECEIVED):        ₱ {all_don_f:,.2f}
+(-) TOTAL EXPENSES:              ₱ {all_exp:,.2f}
+(-) DONATIONS (GIVEN OUT):       ₱ {all_don_t:,.2f}
 --------------------------------------------------
 REMAINING BALANCE:               ₱ {final_bal:,.2f}
 --------------------------------------------------
@@ -176,4 +167,4 @@ REMAINING BALANCE:               ₱ {final_bal:,.2f}
 
     elif menu == "About":
         st.title("About")
-        st.info("System optimized for PHP currency with automated .00 decimal formatting.")
+        st.info("System handles both incoming and outgoing donations with PHP formatting.")
