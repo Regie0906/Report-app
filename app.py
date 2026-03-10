@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+from datetime import datetime
 
 st.set_page_config(page_title="Student Council Finance Tracker", layout="wide")
 
@@ -8,7 +9,6 @@ st.set_page_config(page_title="Student Council Finance Tracker", layout="wide")
 # DATABASE / CONFIG
 # -------------------------
 DB_FILE = "finance_data.csv"
-
 COUNCIL_CREDENTIALS = {
     "ICSSC - Institute of Computer Studies Student Council": "ics123",
     "SSC - Supreme Student Council": "ssc123",
@@ -17,11 +17,11 @@ COUNCIL_CREDENTIALS = {
     "Other Organization": "admin123"
 }
 
-councils = list(COUNCIL_CREDENTIALS.keys())
-
 def load_data():
     if os.path.exists(DB_FILE):
-        return pd.read_csv(DB_FILE)
+        df = pd.read_csv(DB_FILE)
+        df["Date"] = pd.to_datetime(df["Date"])
+        return df
     return pd.DataFrame(columns=["Council", "Date", "Type", "Category", "Description", "Amount"])
 
 def save_data(df):
@@ -42,8 +42,8 @@ if "transactions" not in st.session_state:
 # -------------------------
 if not st.session_state.logged_in:
     st.title("🔐 Council Finance Login")
-    selected_council = st.selectbox("Select Council / Organization", councils)
-    password = st.text_input("Enter Password", type="password")
+    selected_council = st.selectbox("Select Council", list(COUNCIL_CREDENTIALS.keys()))
+    password = st.text_input("Password", type="password")
     if st.button("Login"):
         if password == COUNCIL_CREDENTIALS.get(selected_council):
             st.session_state.logged_in = True
@@ -58,133 +58,101 @@ else:
     st.sidebar.title(f"👤 {st.session_state.current_user}")
     if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
-        st.session_state.current_user = None
         st.rerun()
 
-    menu = st.sidebar.radio("Navigation", ["Monthly Ledger", "Financial Statements", "About"])
+    menu = st.sidebar.radio("Navigation", ["Monthly Ledger", "Balance Sheet", "About"])
 
-    # Filter data for current user
-    full_df = st.session_state.transactions
-    user_df = full_df[full_df["Council"] == st.session_state.current_user].copy()
-    user_df["Amount"] = pd.to_numeric(user_df["Amount"], errors='coerce').fillna(0)
+    # Load and Filter Data
+    full_df = load_data()
+    user_df = full_df[full_df["Council"] == st.session_state.current_user].sort_values("Date")
 
     if menu == "Monthly Ledger":
         st.title(f"📒 Ledger: {st.session_state.current_user}")
         
-        with st.expander("➕ Add New Transaction"):
+        # 1. Select Month for viewing/entry
+        col_m, col_y = st.columns(2)
+        with col_m: 
+            month_selected = st.selectbox("Select Month", range(1, 13), format_func=lambda x: datetime(2025, x, 1).strftime('%B'))
+        with col_y: 
+            year_selected = st.number_input("Year", value=2025)
+
+        # 2. Add New Transaction
+        with st.expander("➕ Add New Entry"):
             c1, c2, c3 = st.columns(3)
-            with c1: date = st.date_input("Date")
-            with c2: t_type = st.selectbox("Type", ["Income", "Expense"])
-            with c3: category = st.text_input("Category (e.g., Supplies, Donation)")
+            with c1: t_date = st.date_input("Transaction Date")
+            with c2: t_type = st.selectbox("Type", ["Income", "Expense", "Donation"])
+            with c3: category = st.text_input("From / To (Category)")
             
-            desc = st.text_input("Description")
+            desc = st.text_input("Description / Details")
             amt_in = st.text_input("Amount (PHP)", "0")
 
-            if st.button("Save Transaction"):
+            if st.button("Save Entry"):
                 try:
                     new_row = pd.DataFrame([{
                         "Council": st.session_state.current_user,
-                        "Date": str(date),
+                        "Date": t_date,
                         "Type": t_type,
                         "Category": category,
                         "Description": desc,
                         "Amount": float(amt_in.replace(",", ""))
                     }])
-                    st.session_state.transactions = pd.concat([st.session_state.transactions, new_row], ignore_index=True)
-                    save_data(st.session_state.transactions)
-                    st.success("Saved!")
+                    full_df = pd.concat([full_df, new_row], ignore_index=True)
+                    save_data(full_df)
+                    st.success("Entry Saved!")
                     st.rerun()
-                except: st.error("Invalid Amount")
+                except: st.error("Please enter a valid amount.")
 
-        st.subheader("Records")
-        edited_df = st.data_editor(user_df, num_rows="dynamic", use_container_width=True)
-        if st.button("Sync Changes"):
-            others = full_df[full_df["Council"] != st.session_state.current_user]
-            st.session_state.transactions = pd.concat([others, edited_df], ignore_index=True)
-            save_data(st.session_state.transactions)
-            st.rerun()
+        st.divider()
 
-    elif menu == "Financial Statements":
-        st.title("📊 Financial Reports")
-        report_type = st.tabs(["Income Statement", "Balance Sheet"])
+        # 3. Monthly Calculations
+        # STARTING BALANCE (All transactions before this month)
+        first_day_current = datetime(year_selected, month_selected, 1)
+        prior_df = user_df[user_df["Date"] < pd.Timestamp(first_day_current)]
+        starting_balance = prior_df[prior_df["Type"].isin(["Income", "Donation"])]["Amount"].sum() - prior_df[prior_df["Type"] == "Expense"]["Amount"].sum()
 
-        # Calculations for Reports
-        total_income = user_df[user_df["Type"] == "Income"]["Amount"].sum()
+        # Current Month Data
+        this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & (user_df["Date"].dt.year == year_selected)]
+        
+        expenses = this_month_df[this_month_df["Type"] == "Expense"]["Amount"].sum()
+        donations = this_month_df[this_month_df["Type"] == "Donation"]["Amount"].sum()
+        incomes = this_month_df[this_month_df["Type"] == "Income"]["Amount"].sum()
+        
+        remaining_balance = starting_balance + incomes + donations - expenses
+
+        # Display Metrics
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("STARTING BALANCE", f"PHP {starting_balance:,.2f}")
+        m2.metric("TOTAL EXPENSES", f"PHP {expenses:,.2f}")
+        m3.metric("TOTAL DONATIONS", f"PHP {donations:,.2f}")
+        m4.metric("REMAINING BALANCE", f"PHP {remaining_balance:,.2f}")
+
+        st.subheader(f"Transactions for {datetime(2025, month_selected, 1).strftime('%B %Y')}")
+        st.dataframe(this_month_df[["Date", "Type", "Category", "Description", "Amount"]], use_container_width=True)
+
+    elif menu == "Balance Sheet":
+        st.title("⚖️ Statement of Financial Position")
+        
+        # Get Latest Data for the Report
+        total_donations = user_df[user_df["Type"] == "Donation"]["Amount"].sum()
         total_expense = user_df[user_df["Type"] == "Expense"]["Amount"].sum()
-        net_income = total_income - total_expense
+        total_income = user_df[user_df["Type"] == "Income"]["Amount"].sum()
+        current_remaining = total_income + total_donations - total_expense
 
-        with report_type[0]:
-            st.subheader("Statement of Comprehensive Income")
-            st.code(f"""
+        st.code(f"""
 {st.session_state.current_user}
-For the period ended 2025
-
-Total Revenue:          PHP {total_income:,.2f}
-Total Expenses:         PHP {total_expense:,.2f}
-------------------------------------------
-NET INCOME:             PHP {net_income:,.2f}
-            """)
-
-        with report_type[1]:
-            st.subheader("Statement of Financial Position")
-            
-            # Manual inputs for balance sheet items not in ledger
-            col_a, col_b = st.columns(2)
-            with col_a:
-                cash_coop = st.number_input("Cash on Coop (Note 2)", value=21000.0)
-                supplies = st.number_input("Supplies (Note 3)", value=1000.0)
-                equip_cost = st.number_input("Equipment Cost (Note 4)", value=10000.0)
-            with col_b:
-                useful_life = st.number_input("Useful Life (Years)", value=10)
-                donations = st.number_input("Donations (Note 9)", value=0.0)
-
-            # Logic for Note 5: Depreciation
-            acc_dep = (equip_cost / useful_life) if useful_life > 0 else 0
-            net_equip = equip_cost - acc_dep
-            
-            # Note 1: Cash on Hand (Assuming ledger tracks cash)
-            cash_on_hand = net_income # Simplified: Net income represents cash flow here
-            
-            total_assets = cash_on_hand + cash_coop + supplies + net_equip
-            total_equity = total_assets # Accounting Equation A = L + E
-
-            st.code(f"""
-{st.session_state.current_user}
-STATEMENT OF FINANCIAL POSITION
-As of August 2025
-
-ASSETS
-Current Assets
-    Cash on Hand (Note 1)              PHP {cash_on_hand:,.2f}
-    Cash on Coop (Note 2)                  {cash_coop:,.2f}
-    Supplies (Note 3)                      {supplies:,.2f}
-Total Current Assets                   PHP {(cash_on_hand + cash_coop + supplies):,.2f}
-
-Noncurrent Assets
-    Equipment (Note 4)                     {equip_cost:,.2f}
-    Acc. Depreciation (Note 5)            ({acc_dep:,.2f})
-Total Noncurrent Assets                    {net_equip:,.2f}
+FINANCIAL SUMMARY REPORT
 ---------------------------------------------------------
-TOTAL ASSETS                           PHP {total_assets:,.2f}
-
-LIABILITIES AND EQUITY
-Liabilities
-    Accounts Payable (Note 6)              0.00
-    Unearned Income (Note 7)               0.00
-Total Liabilities                          0.00
-
-Equity
-    SSC Capital (Note 8)                   {total_equity - donations:,.2f}
-    Donations (Note 9)                     {donations:,.2f}
-Total Equity                               {total_equity:,.2f}
+STARTING BALANCE (Initial):    PHP 0.00
+(+) TOTAL INCOME:              PHP {total_income:,.2f}
+(+) TOTAL DONATIONS:           PHP {total_donations:,.2f}
+(-) TOTAL EXPENSES:            PHP {total_expense:,.2f}
 ---------------------------------------------------------
-TOTAL LIABILITIES AND EQUITY           PHP {total_assets:,.2f}
-            """)
-
-            with st.expander("View Notes to Financial Statements"):
-                st.write(f"**Note 5:** Cost (PHP {equip_cost:,.2f}) / Life ({useful_life}) = PHP {acc_dep:,.2f}")
-                st.write(f"**Note 8:** Calculated as Total Net Assets.")
+REMAINING BALANCE:             PHP {current_remaining:,.2f}
+---------------------------------------------------------
+*Note: The Remaining Balance will serve as the 
+Starting Balance for the following period.
+        """)
 
     elif menu == "About":
-        st.title("About")
-        st.info("Custom Finance System for SSC. Uses Philippine Peso (PHP) formatting.")
+        st.title("System Info")
+        st.write("Finance Tracker v3.0 - Auto-balancing Enabled.")
