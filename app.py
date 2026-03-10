@@ -1,87 +1,74 @@
 import streamlit as st
 import pandas as pd
-import os
-from datetime import datetime
 
 st.set_page_config(page_title="Student Council Finance Tracker", layout="wide")
 
 # -------------------------
 # DATABASE / CONFIG
 # -------------------------
-DB_FILE = "finance_data.csv"
-ARCHIVE_FILE = "archived_reports.csv"
+# Define passwords for each council
+COUNCIL_CREDENTIALS = {
+    "ICSSC - Institute of Computer Studies Student Council": "ics123",
+    "SSC - Supreme Student Council": "ssc123",
+    "JPCS - Junior Philippine Computer Society": "jpcs123",
+    "ITSO - IT Society Organization": "itso123",
+    "Other Organization": "admin123"
+}
 
-COUNCILS = [
-    "ICSSC - Institute of Computer Studies Student Council",
-    "SSC - Supreme Student Council",
-    "JPCS - Junior Philippine Computer Society",
-    "ITSO - IT Society Organization",
-    "Other Organization"
-]
-
-def load_data():
-    if os.path.exists(DB_FILE):
-        try:
-            df = pd.read_csv(DB_FILE)
-            df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
-            if "Council" not in df.columns:
-                return pd.DataFrame(columns=["Council", "Date", "Type", "Category", "Description", "Amount"])
-            return df
-        except:
-            return pd.DataFrame(columns=["Council", "Date", "Type", "Category", "Description", "Amount"])
-    return pd.DataFrame(columns=["Council", "Date", "Type", "Category", "Description", "Amount"])
-
-def save_data(df):
-    df.to_csv(DB_FILE, index=False)
-
-def load_archives():
-    if os.path.exists(ARCHIVE_FILE):
-        try:
-            return pd.read_csv(ARCHIVE_FILE)
-        except:
-            pass
-    return pd.DataFrame(columns=["Council", "Archive_Date", "Period", "Starting_Bal", "Total_Inc", "Don_Rcv", "Total_Exp", "Don_Giv", "Remaining_Bal"])
-
-def save_all_archives(df):
-    df.to_csv(ARCHIVE_FILE, index=False)
+councils = list(COUNCIL_CREDENTIALS.keys())
 
 # -------------------------
-# SESSION STORAGE
+# SESSION STORAGE INITIALIZATION
 # -------------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "current_user" not in st.session_state:
     st.session_state.current_user = None
-if "manual_start_val" not in st.session_state:
-    st.session_state.manual_start_val = 0.0
+if "reports" not in st.session_state:
+    st.session_state.reports = {}
+if "transactions" not in st.session_state:
+    st.session_state.transactions = pd.DataFrame(
+        columns=["Council", "Date", "Type", "Category", "Description", "Amount"]
+    )
 
 # -------------------------
-# LOGIN PAGE
+# LOGIN SECTION
+# -------------------------
+def login_page():
+    st.title("🔐 Council Finance Login")
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        selected_council = st.selectbox("Select Council / Organization", councils)
+        password = st.text_input("Enter Password", type="password")
+        
+        if st.button("Login"):
+            if password == COUNCIL_CREDENTIALS.get(selected_council):
+                st.session_state.logged_in = True
+                st.session_state.current_user = selected_council
+                st.success(f"Welcome, {selected_council}!")
+                st.rerun()
+            else:
+                st.error("Incorrect password. Please try again.")
+
+# -------------------------
+# MAIN APP LOGIC
 # -------------------------
 if not st.session_state.logged_in:
-    st.title("Council Finance Login")
-    selected_council = st.selectbox("Select Council / Organization", COUNCILS)
-    if st.button("Login"):
-        st.session_state.logged_in = True
-        st.session_state.current_user = selected_council
-        st.rerun()
+    login_page()
 else:
-    # -------------------------
-    # AUTHENTICATED APP
-    # -------------------------
+    # Sidebar logout and info
     st.sidebar.title(f"👤 {st.session_state.current_user}")
     if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
         st.session_state.current_user = None
         st.rerun()
 
-    menu = st.sidebar.radio("Navigation", ["Monthly Ledger", "Balance Sheet", "Archived Reports", "About"])
-
-    full_df = load_data()
-    user_df = full_df[full_df["Council"] == st.session_state.current_user].copy()
-    user_df["Amount"] = pd.to_numeric(user_df["Amount"], errors='coerce').fillna(0)
-
-    if menu == "Monthly Ledger":
+    menu = st.sidebar.radio(
+        "Navigation",
+        ["Monthly Ledger", "Financial Statements", "Saved Reports", "About"]
+    )
+ if menu == "Monthly Ledger":
         st.title(f"Financial Report: {st.session_state.current_user}")
         
         col_m, col_y, col_s = st.columns([1, 1, 1])
@@ -117,53 +104,36 @@ else:
 
         st.divider()
 
-        # 1. ADD NEW TRANSACTION (TOP)
-        st.subheader("➕ Add New Transaction")
-        with st.container(border=True):
-            c1, c2, c3 = st.columns(3)
-            with c1: t_date = st.date_input("Date")
-            with c2: t_type = st.selectbox("Type", ["Income", "Expense", "Donation (From)", "Donation (To)"])
-            with c3: category = st.text_input("Category")
-            desc = st.text_input("Description")
-            amt_val = st.number_input("Amount (₱)", min_value=0.0, step=100.0)
+   # Filter data ONLY for the logged-in council
+        full_df = st.session_state.transactions
+        filtered_df = full_df[full_df["Council"] == st.session_state.current_user].copy()
 
-            if st.button("Add Entry"):
-                new_row = pd.DataFrame([{
-                    "Council": st.session_state.current_user,
-                    "Date": t_date,
-                    "Type": t_type,
-                    "Category": category,
-                    "Description": desc,
-                    "Amount": amt_val
-                }])
-                save_data(pd.concat([load_data(), new_row], ignore_index=True))
-                st.success("Entry Saved!")
-                st.rerun()
+        st.subheader("Ledger Table")
+        edited_df = st.data_editor(filtered_df, num_rows="dynamic", use_container_width=True)
 
-        st.write("") 
+        if st.button("Save Table Changes"):
+            other_councils = full_df[full_df["Council"] != st.session_state.current_user]
+            st.session_state.transactions = pd.concat([other_councils, edited_df], ignore_index=True)
+            st.success("Changes saved!")
+            st.rerun()
 
-        # 2. MANAGE TRANSACTIONS (BOTTOM)
-        st.subheader("📊 Manage Current Transactions")
-        if not this_month_df.empty:
-            with st.container(border=True):
-                # Row selection for deletion
-                st.info("💡 Select a transaction from the dropdown to delete it, or view the ledger below.")
-                selected_item_idx = st.selectbox(
-                    "Select record to Delete:", 
-                    options=this_month_df.index.tolist(),
-                    format_func=lambda x: f"{this_month_df.loc[x, 'Date'].strftime('%Y-%m-%d')} | {this_month_df.loc[x, 'Description']} (₱{this_month_df.loc[x, 'Amount']:,.2f})"
-                )
-                
-                if st.button("🗑️ Delete Selected Record", type="secondary"):
-                    save_data(full_df.drop(selected_item_idx))
-                    st.success("Record deleted.")
-                    st.rerun()
+        # Calculations
+        edited_df["Amount"] = pd.to_numeric(edited_df["Amount"], errors='coerce').fillna(0)
+        total_income = edited_df[edited_df["Type"] == "Income"]["Amount"].sum()
+        total_expense = edited_df[edited_df["Type"] == "Expense"]["Amount"].sum()
+        ending_balance = starting_balance + total_income - total_expense
 
-                st.dataframe(this_month_df[["Date", "Type", "Category", "Description", "Amount"]], use_container_width=True)
-        else:
-            st.info("No records for this period.")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Income", f"₱ {total_income:,.2f}")
+        c2.metric("Total Expense", f"₱ {total_expense:,.2f}")
+        c3.metric("Ending Balance", f"₱ {ending_balance:,.2f}")
 
-    elif menu == "Balance Sheet":
+        if st.button("Save Monthly Report"):
+            key = f"{st.session_state.current_user}_{month}"
+            st.session_state.reports[key] = edited_df.copy()
+            st.success(f"Report for {month} archived.")
+
+  elif menu == "Balance Sheet":
         st.title("Financial Summary")
         st_bal_sheet = st.session_state.get('manual_start_val', 0.0)
         current_period = st.session_state.get('current_period', "Current Month")
@@ -209,29 +179,24 @@ REMAINING BALANCE:               ₱ {final_bal:,.2f}
             st.success(f"Report finalized! ₱{final_bal:,.2f} is now your Starting Balance.")
             st.rerun()
 
-    elif menu == "Archived Reports":
-        st.title("📁 Saved Reports")
-        all_archives = load_archives()
-        user_archives = all_archives[all_archives["Council"] == st.session_state.current_user]
-
-        if not user_archives.empty:
-            st.subheader("Manage Saved Records")
-            report_to_manage = st.selectbox(
-                "Select a Saved Report to Delete:",
-                options=user_archives.index.tolist(),
-                format_func=lambda x: f"Period: {user_archives.loc[x, 'Period']} (Saved on {user_archives.loc[x, 'Archive_Date']})"
-            )
-
-            if st.button("🗑️ Delete Saved Report", type="primary"):
-                save_all_archives(all_archives.drop(report_to_manage))
-                st.warning("Saved report deleted.")
-                st.rerun()
-
-            st.divider()
-            st.dataframe(user_archives.drop(columns=["Council"]), use_container_width=True)
+    # -------------------------
+    # SAVED REPORTS
+    # -------------------------
+    elif menu == "Saved Reports":
+        st.title("📁 Your Archived Reports")
+        user_reports = {k: v for k, v in st.session_state.reports.items() if k.startswith(st.session_state.current_user)}
+        
+        if user_reports:
+            for key, data in user_reports.items():
+                with st.expander(f"Report: {key.replace(st.session_state.current_user + '_', '')}"):
+                    st.dataframe(data, use_container_width=True)
         else:
-            st.info("No saved reports found.")
+            st.info("No reports saved for this council yet.")
 
+   # -------------------------
+    # ABOUT
+    # -------------------------
     elif menu == "About":
         st.title("About")
-        st.info("Finance System with Automated Carry-over and Archive Management.")
+        st.write("Secure Finance Tracking System for Student Organizations.")
+
