@@ -89,10 +89,10 @@ else:
 
         st.subheader(f"Current Activity for {st.session_state.current_period}")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("LEDGER START", f"₱ {ledger_start_bal:,.2f}")
-        m2.metric("MONTH EXPENSES", f"₱ {(curr_exp + curr_don_t):,.2f}")
-        m3.metric("MONTH INCOME", f"₱ {(curr_inc + curr_don_f):,.2f}")
-        m4.metric("MONTH ENDING", f"₱ {rem_bal:,.2f}")
+        m1.metric("BEGINNING BALANCE", f"₱ {ledger_start_bal:,.2f}")
+        m2.metric("EXPENSES", f"₱ {(curr_exp + curr_don_t):,.2f}")
+        m3.metric("INCOME", f"₱ {(curr_inc + curr_don_f):,.2f}")
+        m4.metric("ENDING BALANCE", f"₱ {rem_bal:,.2f}")
 
         st.divider()
 
