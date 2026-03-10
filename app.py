@@ -23,8 +23,8 @@ if "transactions" not in st.session_state:
 COUNCILS = [
     "ICSSC - Institute of Computer Studies Student Council",
     "SSC - Supreme Student Council",
-    "JPCS - Junior Philippine Computer Society",
-    "ITSO - IT Society Organization",
+    "PCSSC - Pasig Central Student Council",
+    "MCSSC - Mandaluyong Central Student Council",
     "Other Organization"
 ]
 
