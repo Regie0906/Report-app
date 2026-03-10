@@ -20,7 +20,8 @@ COUNCIL_CREDENTIALS = {
 def load_data():
     if os.path.exists(DB_FILE):
         df = pd.read_csv(DB_FILE)
-        df["Date"] = pd.to_datetime(df["Date"])
+        # Convert date column to datetime objects
+        df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
         return df
     return pd.DataFrame(columns=["Council", "Date", "Type", "Category", "Description", "Amount"])
 
@@ -34,8 +35,6 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "current_user" not in st.session_state:
     st.session_state.current_user = None
-if "transactions" not in st.session_state:
-    st.session_state.transactions = load_data()
 
 # -------------------------
 # LOGIN PAGE
@@ -62,34 +61,32 @@ else:
 
     menu = st.sidebar.radio("Navigation", ["Monthly Ledger", "Balance Sheet", "About"])
 
-    # Always reload fresh data from CSV to ensure carry-over is accurate
+    # Load fresh data
     full_df = load_data()
-    # Filter for logged in council
     user_df = full_df[full_df["Council"] == st.session_state.current_user].sort_values("Date")
     user_df["Amount"] = pd.to_numeric(user_df["Amount"], errors='coerce').fillna(0)
 
     if menu == "Monthly Ledger":
         st.title(f"📒 Ledger: {st.session_state.current_user}")
         
-        # Month/Year Selection
         col_m, col_y = st.columns(2)
         with col_m:
             month_selected = st.selectbox("Select Month", range(1, 13), 
                                           index=datetime.now().month - 1,
-                                          format_func=lambda x: datetime(2025, x, 1).strftime('%B'))
+                                          format_func=lambda x: datetime(2026, x, 1).strftime('%B'))
         with col_y:
-            year_selected = st.number_input("Year", value=2025)
+            year_selected = st.number_input("Year", value=2026)
 
-        # STARTING BALANCE CALCULATION
-        # Sum of everything BEFORE the first day of the selected month
-        first_day_current = datetime(year_selected, month_selected, 1)
-        prior_data = user_df[user_df["Date"] < pd.Timestamp(first_day_current)]
+        # STARTING BALANCE (Cumulative history BEFORE this month)
+        first_day_of_month = pd.Timestamp(datetime(year_selected, month_selected, 1))
+        prior_data = user_df[user_df["Date"] < first_day_of_month]
         
+        # Calculate Starting Balance
         prior_inc = prior_data[prior_data["Type"].isin(["Income", "Donation"])]["Amount"].sum()
         prior_exp = prior_data[prior_data["Type"] == "Expense"]["Amount"].sum()
-        starting_balance = prior_inc - prior_exp # This starts at 0 if no prior data exists
+        starting_balance = prior_inc - prior_exp
 
-        # CURRENT MONTH DATA
+        # CURRENT MONTH DATA (Resets to zero activity every month)
         this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & 
                                 (user_df["Date"].dt.year == year_selected)]
         
@@ -99,25 +96,25 @@ else:
         
         remaining_balance = starting_balance + curr_inc + curr_don - curr_exp
 
-        # Display Summary
-        st.subheader("Summary for this Month")
+        # Display Metrics
+        st.subheader(f"Financial Activity for {datetime(2026, month_selected, 1).strftime('%B %Y')}")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("STARTING BALANCE", f"PHP {starting_balance:,.2f}")
-        m2.metric("EXPENSE", f"PHP {curr_exp:,.2f}")
-        m3.metric("DONATION", f"PHP {curr_don:,.2f}")
-        m4.metric("REMAINING BALANCE", f"PHP {remaining_balance:,.2f}")
+        m1.metric("STARTING BALANCE", f"₱ {starting_balance:,.2f}")
+        m2.metric("EXPENSE", f"₱ {curr_exp:,.2f}")
+        m3.metric("DONATION", f"₱ {curr_don:,.2f}")
+        m4.metric("REMAINING BALANCE", f"₱ {remaining_balance:,.2f}")
 
         st.divider()
 
-        # Add New Transaction
-        with st.expander("➕ Add New Transaction (From/To)"):
+        # Input Section
+        with st.expander("➕ Add New Transaction"):
             c1, c2, c3 = st.columns(3)
             with c1: t_date = st.date_input("Date")
             with c2: t_type = st.selectbox("Type", ["Income", "Expense", "Donation"])
             with c3: category = st.text_input("From / To")
             
             desc = st.text_input("Description")
-            amt_in = st.text_input("Amount (PHP)", "0")
+            amt_in = st.text_input("Amount (₱)", "0")
 
             if st.button("Add Entry"):
                 try:
@@ -129,38 +126,38 @@ else:
                         "Description": desc,
                         "Amount": float(amt_in.replace(",", ""))
                     }])
-                    updated_full = pd.concat([full_df, new_row], ignore_index=True)
+                    # Use the fresh full_df to avoid losing other council data
+                    updated_full = pd.concat([load_data(), new_row], ignore_index=True)
                     save_data(updated_full)
-                    st.success("Transaction recorded!")
+                    st.success("Entry saved!")
                     st.rerun()
-                except: st.error("Invalid amount entered.")
+                except: st.error("Please enter a valid number for amount.")
 
-        st.subheader("Monthly Records")
+        st.subheader("Monthly Transaction History")
         st.dataframe(this_month_df[["Date", "Type", "Category", "Description", "Amount"]], use_container_width=True)
 
     elif menu == "Balance Sheet":
         st.title("📊 Statement of Financial Position")
         
-        # Calculate overall totals for the cumulative report
+        # Calculate Lifetime Totals
         all_inc = user_df[user_df["Type"] == "Income"]["Amount"].sum()
         all_don = user_df[user_df["Type"] == "Donation"]["Amount"].sum()
         all_exp = user_df[user_df["Type"] == "Expense"]["Amount"].sum()
-        final_balance = all_inc + all_don - all_exp
+        final_bal = all_inc + all_don - all_exp
 
         st.code(f"""
 {st.session_state.current_user}
----------------------------------------------------------
-OVERALL FINANCIAL SUMMARY
----------------------------------------------------------
-STARTING BALANCE (Initial):    PHP 0.00
-(+) TOTAL INCOME:              PHP {all_inc:,.2f}
-(+) TOTAL DONATIONS:           PHP {all_don:,.2f}
-(-) TOTAL EXPENSES:            PHP {all_exp:,.2f}
----------------------------------------------------------
-REMAINING BALANCE:             PHP {final_balance:,.2f}
----------------------------------------------------------
+SUMMARY AS OF {datetime.now().strftime('%B %d, %Y')}
+
+1. STARTING BALANCE (Life-to-date):   ₱ 0.00
+2. TOTAL INCOME:                    ₱ {all_inc:,.2f}
+3. TOTAL DONATIONS:                 ₱ {all_don:,.2f}
+4. TOTAL EXPENSES:                  ₱ {all_exp:,.2f}
+--------------------------------------------------
+REMAINING BALANCE:                  ₱ {final_bal:,.2f}
+--------------------------------------------------
         """)
 
     elif menu == "About":
-        st.title("About System")
-        st.write("Automatic month-to-month carry-over system enabled.")
+        st.title("About")
+        st.info("System tracks carry-over balances while keeping monthly expense/donation counters fresh.")
