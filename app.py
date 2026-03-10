@@ -24,8 +24,7 @@ if "transactions" not in st.session_state:
 COUNCILS = [
     "ICSSC - Institute of Computer Studies Student Council",
     "SSC - Supreme Student Council",
-    "JPCS - Junior Philippine Computer Society",
-    "ITSO - IT Society Organization",
+    "PCSSC - Pasig Central Supreme Student Council",
     "Other Organization"
 ]
 
@@ -33,7 +32,7 @@ COUNCILS = [
 # LOGIN PAGE
 # -------------------------
 if not st.session_state.logged_in:
-    st.title("🔐 Council Finance Login")
+    st.title("Council Login")
     selected_council = st.selectbox("Select Council / Organization", ["-- Choose One --"] + COUNCILS)
     
     if st.button("Login"):
@@ -80,20 +79,20 @@ else:
         user_df["Date"] = pd.to_datetime(user_df["Date"], errors='coerce')
         this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & (user_df["Date"].dt.year == year_selected)]
         
+        curr_exp = this_month_df[this_month_df["Type"] == "Expense"]["Amount"].sum()
         curr_inc = this_month_df[this_month_df["Type"] == "Income"]["Amount"].sum()
         curr_don_f = this_month_df[this_month_df["Type"] == "Donation (From)"]["Amount"].sum()
         curr_don_t = this_month_df[this_month_df["Type"] == "Donation (To)"]["Amount"].sum()
-        curr_exp = this_month_df[this_month_df["Type"] == "Expense"]["Amount"].sum()
         
         # This calculation is only for this month's view
-        rem_bal = ledger_start_bal + curr_inc + curr_don_f - curr_exp - curr_don_t
+        rem_bal = starting_bal + curr_inc + curr_don_f - curr_exp - curr_don_t
 
         st.subheader(f"Current Activity for {st.session_state.current_period}")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("LEDGER START", f"₱ {ledger_start_bal:,.2f}")
-        m2.metric("MONTH EXPENSES", f"₱ {(curr_exp + curr_don_t):,.2f}")
-        m3.metric("MONTH INCOME", f"₱ {(curr_inc + curr_don_f):,.2f}")
-        m4.metric("MONTH ENDING", f"₱ {rem_bal:,.2f}")
+        m1.metric("STARTING BALANCE", f"₱ {starting_bal_:,.2f}")
+        m2.metric("EXPENSES", f"₱ {(curr_exp + curr_don_t):,.2f}")
+        m3.metric("INCOME", f"₱ {(curr_inc + curr_don_f):,.2f}")
+        m4.metric("ENDING BALANCE", f"₱ {rem_bal:,.2f}")
 
         st.divider()
 
@@ -130,11 +129,11 @@ else:
         # Pulls the actual carried-over balance from the session
         st_bal_sheet = st.session_state.manual_start_val
         current_period = st.session_state.get('current_period', "Current Month")
-        
+
+        all_exp = user_df[user_df["Type"] == "Expense"]["Amount"].sum()
         all_inc = user_df[user_df["Type"] == "Income"]["Amount"].sum()
         all_don_f = user_df[user_df["Type"] == "Donation (From)"]["Amount"].sum()
         all_don_t = user_df[user_df["Type"] == "Donation (To)"]["Amount"].sum()
-        all_exp = user_df[user_df["Type"] == "Expense"]["Amount"].sum()
         
         final_bal = st_bal_sheet + all_inc + all_don_f - all_exp - all_don_t
 
@@ -147,12 +146,12 @@ PERIOD: {current_period}
 --------------------------------------------------
 STARTING BALANCE (CARRY-OVER):   ₱ {st_bal_sheet:,.2f}
 --------------------------------------------------
+(-) TOTAL EXPENSES:              ₱ {all_exp:,.2f}
 (+) TOTAL INCOME:                ₱ {all_inc:,.2f}
 (+) DONATIONS (RECEIVED):        ₱ {all_don_f:,.2f}
-(-) TOTAL EXPENSES:              ₱ {all_exp:,.2f}
 (-) DONATIONS (GIVEN OUT):       ₱ {all_don_t:,.2f}
 --------------------------------------------------
-GRAND TOTAL BALANCE:             ₱ {final_bal:,.2f}
+TOTAL BALANCE:                   ₱ {final_bal:,.2f}
 --------------------------------------------------
             """)
 
@@ -169,7 +168,7 @@ GRAND TOTAL BALANCE:             ₱ {final_bal:,.2f}
             else:
                 st.info("No data for trend chart.")
 
-        if st.button("💾 Finalize & Save Report"):
+        if st.button("Finalize & Save Report"):
             archive_key = f"{st.session_state.current_user}_{current_period}_{datetime.now().strftime('%H%M%S')}"
             st.session_state.reports[archive_key] = user_df.copy()
             
@@ -180,7 +179,7 @@ GRAND TOTAL BALANCE:             ₱ {final_bal:,.2f}
             st.rerun()
 
     elif menu == "Saved Reports":
-        st.title("📁 Your Archived Reports")
+        st.title("📁 Your Saved Reports")
         user_reports = {k: v for k, v in st.session_state.reports.items() if k.startswith(st.session_state.current_user)}
         if user_reports:
             for key, data in user_reports.items():
