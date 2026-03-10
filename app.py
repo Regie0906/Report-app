@@ -1,52 +1,96 @@
 import streamlit as st
 import pandas as pd
+import os
+from datetime import datetime
 
 st.set_page_config(page_title="Student Council Finance Tracker", layout="wide")
 
 # -------------------------
+# DATABASE / CONFIG
+# -------------------------
+DB_FILE = "finance_data.csv"
+ARCHIVE_FILE = "archived_reports.csv"
+
+COUNCILS = [
+    "ICSSC - Institute of Computer Studies Student Council",
+    "SSC - Supreme Student Council",
+    "JPCS - Junior Philippine Computer Society",
+    "ITSO - IT Society Organization",
+    "Other Organization"
+]
+
+def load_data():
+    if os.path.exists(DB_FILE):
+        try:
+            df = pd.read_csv(DB_FILE)
+            df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
+            if "Council" not in df.columns:
+                return pd.DataFrame(columns=["Council", "Date", "Type", "Category", "Description", "Amount"])
+            return df
+        except:
+            return pd.DataFrame(columns=["Council", "Date", "Type", "Category", "Description", "Amount"])
+    return pd.DataFrame(columns=["Council", "Date", "Type", "Category", "Description", "Amount"])
+
+def save_data(df):
+    df.to_csv(DB_FILE, index=False)
+
+def load_archives():
+    if os.path.exists(ARCHIVE_FILE):
+        try:
+            return pd.read_csv(ARCHIVE_FILE)
+        except:
+            pass
+    return pd.DataFrame(columns=["Council", "Archive_Date", "Period", "Starting_Bal", "Total_Inc", "Don_Rcv", "Total_Exp", "Don_Giv", "Remaining_Bal"])
+
+def save_all_archives(df):
+    df.to_csv(ARCHIVE_FILE, index=False)
+
+# -------------------------
 # SESSION STORAGE
 # -------------------------
-if "reports" not in st.session_state:
-    st.session_state.reports = {}
-
-if "transactions" not in st.session_state:
-    st.session_state.transactions = pd.DataFrame(
-        columns=["Date", "Type", "Category", "Description", "Amount"]
-    )
-
-# -------------------------
-# SIDEBAR NAVIGATION
-# -------------------------
-menu = st.sidebar.radio(
-    "Navigation",
-    [
-        "Monthly Ledger",
-        "Financial Statements",
-        "Saved Reports",
-        "About"
-    ]
-)
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "current_user" not in st.session_state:
+    st.session_state.current_user = None
+if "manual_start_val" not in st.session_state:
+    st.session_state.manual_start_val = 0.0
 
 # -------------------------
-# MONTHLY LEDGER
+# MAIN APP LOGIC
 # -------------------------
-if menu == "Monthly Ledger":
+if not st.session_state.logged_in:
+    st.title("Council Finance Login")
+    selected_council = st.selectbox("Select Council / Organization", COUNCILS)
+    if st.button("Login"):
+        st.session_state.logged_in = True
+        st.session_state.current_user = selected_council
+        st.rerun()
+else:
+    st.sidebar.title(f"👤 {st.session_state.current_user}")
+    if st.sidebar.button("Logout"):
+        st.session_state.logged_in = False
+        st.rerun()
 
-    st.title("📒 Student Council Monthly Finance Ledger")
+    menu = st.sidebar.radio("Navigation", ["Monthly Ledger", "Balance Sheet", "Archived Reports", "About"])
+    
+    full_df = load_data()
+    user_df = full_df[full_df["Council"] == st.session_state.current_user].copy()
 
-    month = st.selectbox(
-        "Select Month",
-        [
-            "January", "February", "March", "April",
-            "May", "June", "July", "August",
-            "September", "October", "November", "December"
-        ]
-    )
+    if menu == "Monthly Ledger":
+        st.title(f"Financial Report: {st.session_state.current_user}")
+        
+        col_m, col_y, col_s = st.columns([1, 1, 1])
+        with col_m:
+            month_selected = st.selectbox("Select Month", range(1, 13), 
+                                          index=datetime.now().month - 1,
+                                          format_func=lambda x: datetime(2026, x, 1).strftime('%B'))
+        with col_y:
+            year_selected = st.number_input("Year", value=2026)
+        with col_s:
+            st_bal = st.number_input("Starting Balance (₱)", value=float(st.session_state.manual_start_val))
+            st.session_state.manual_start_val = st_bal
 
-    starting_balance = st.number_input(
-        "Starting Balance (Cash on Hand at Beginning of Month)",
-        min_value=0.0
-    )
+        st.session_state.current_period = f"{datetime(2026, month_selected, 1).strftime('%B')} {year_selected}"
 
     st.subheader("Add Transaction")
     col1, col2, col3, col4 = st.columns(4)
@@ -77,151 +121,98 @@ if menu == "Monthly Ledger":
     )
 
     df = st.session_state.transactions
+        # Filter and calculate
+        this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & (user_df["Date"].dt.year == year_selected)].copy()
+        inc_sum = this_month_df[this_month_df["Type"].isin(["Income", "Donation (From)"])]["Amount"].sum()
+        exp_sum = this_month_df[this_month_df["Type"].isin(["Expense", "Donation (To)"])]["Amount"].sum()
+        rem_bal = st_bal + inc_sum - exp_sum
 
-    # Calculate totals
-    total_income = df[df["Type"] == "Income"]["Amount"].sum()
-    total_expense = df[df["Type"] == "Expense"]["Amount"].sum()
-    cash_on_hand = starting_balance + total_income - total_expense
+        st.subheader(f"Activity for {st.session_state.current_period}")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("STARTING", f"₱{st_bal:,.2f}")
+        m2.metric("EXPENSES", f"₱{exp_sum:,.2f}")
+        m3.metric("INCOME", f"₱{inc_sum:,.2f}")
+        m4.metric("REMAINING", f"₱{rem_bal:,.2f}")
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Income", f"₱ {total_income:,.2f}")
-    col2.metric("Total Expense", f"₱ {total_expense:,.2f}")
-    col3.metric("Remaining Balance", f"₱ {cash_on_hand:,.2f}")
-    col4.metric("Cash on Hand", f"₱ {cash_on_hand:,.2f}")
+        st.divider()
+        st.write("### Transaction History")
+        st.caption("Click a row below to select it, then the delete button will appear.")
 
-    if st.button("Save Monthly Report"):
-        st.session_state.reports[month] = df.copy()
-        st.success(f"{month} report saved")
+        # Updated selection logic to avoid the error in your screenshot
+        ledger_selection = st.dataframe(
+            this_month_df[["Date", "Type", "Category", "Description", "Amount"]],
+            use_container_width=True,
+            on_select="rerun",
+            selection_mode="single_row"
+        )
 
-# -------------------------
-# FINANCIAL STATEMENTS
-# -------------------------
-elif menu == "Financial Statements":
+        # Show delete button ONLY if a row is selected
+        if ledger_selection.selection.rows:
+            selected_idx = this_month_df.index[ledger_selection.selection.rows[0]]
+            if st.button("🗑️ Delete Selected Record", type="primary"):
+                save_data(full_df.drop(selected_idx))
+                st.rerun()
 
-    st.title("📊 Financial Statements")
-    df = st.session_state.transactions
+        with st.expander("➕ Add New Transaction"):
+            c1, c2, c3 = st.columns(3)
+            with c1: t_date = st.date_input("Date")
+            with c2: t_type = st.selectbox("Type", ["Income", "Expense", "Donation (From)", "Donation (To)"])
+            with c3: category = st.text_input("Category")
+            desc = st.text_input("Description")
+            amt_val = st.number_input("Amount (₱)", min_value=0.0)
+            if st.button("Add Entry"):
+                new_row = pd.DataFrame([{"Council": st.session_state.current_user, "Date": t_date, "Type": t_type, "Category": category, "Description": desc, "Amount": amt_val}])
+                save_data(pd.concat([full_df, new_row], ignore_index=True))
+                st.rerun()
 
-    # Month and Year
-    month_selected = st.selectbox(
-        "Select Month for Statement",
-        [
-            "January", "February", "March", "April",
-            "May", "June", "July", "August",
-            "September", "October", "November", "December"
-        ]
-    )
-    year_selected = st.number_input("Year", min_value=2000, max_value=2100, value=2026, step=1)
+    elif menu == "Balance Sheet":
+        st.title("Financial Summary")
+        st_bal_sheet = st.session_state.get('manual_start_val', 0.0)
+        current_period = st.session_state.get('current_period', "Current Month")
+        
+        inc = user_df[user_df["Type"] == "Income"]["Amount"].sum()
+        don_f = user_df[user_df["Type"] == "Donation (From)"]["Amount"].sum()
+        don_t = user_df[user_df["Type"] == "Donation (To)"]["Amount"].sum()
+        exp = user_df[user_df["Type"] == "Expense"]["Amount"].sum()
+        final_bal = st_bal_sheet + inc + don_f - exp - don_t
 
-    # Calculate totals
-    total_income = df[df["Type"] == "Income"]["Amount"].sum()
-    total_expense = df[df["Type"] == "Expense"]["Amount"].sum()
-    net_income = total_income - total_expense
-    cash_on_hand = total_income - total_expense + st.session_state.transactions["Amount"].iloc[0] if not df.empty else 0
+        st.code(f"PERIOD: {current_period}\nREMAINING BALANCE: ₱ {final_bal:,.2f}")
 
-    # -------------------------
-    # Statement of Comprehensive Income
-    # -------------------------
-    if total_income > 0:
-        st.subheader("Statement of Comprehensive Income")
+        if st.button("💾 Finalize & Save Report (Carry Over)"):
+            archive_row = pd.DataFrame([{"Council": st.session_state.current_user, "Archive_Date": datetime.now().strftime("%Y-%m-%d"), "Period": current_period, "Starting_Bal": st_bal_sheet, "Total_Inc": inc, "Don_Rcv": don_f, "Total_Exp": exp, "Don_Giv": don_t, "Remaining_Bal": final_bal}])
+            save_all_archives(pd.concat([load_archives(), archive_row], ignore_index=True))
+            # Delete entries and update carry-over
+            save_data(full_df[full_df["Council"] != st.session_state.current_user])
+            st.session_state.manual_start_val = final_bal
+            st.success("Report Saved and Balance Carried Over!")
+            st.rerun()
 
-        income_items = df[df["Type"] == "Income"].groupby("Category")["Amount"].sum().reset_index()
-        expense_items = df[df["Type"] == "Expense"].groupby("Category")["Amount"].sum().reset_index()
+    elif menu == "Archived Reports":
+        st.title("📁 Saved Reports")
+        all_archives = load_archives()
+        user_archives = all_archives[all_archives["Council"] == st.session_state.current_user].copy()
 
-        statement_income = f"""
-SUPREME STUDENT COUNCIL
-STATEMENT OF COMPREHENSIVE INCOME
-For the Month Ended {month_selected} 31, {year_selected}
+        if not user_archives.empty:
+            st.write("### Archive Management")
+            st.caption("Click a row to select a report to delete.")
+            
+            archive_selection = st.dataframe(
+                user_archives.drop(columns=["Council"]),
+                use_container_width=True,
+                on_select="rerun",
+                selection_mode="single_row"
+            )
 
-Service Revenue (Note 1)           ₱ {total_income:,.2f}
-Add: Other Income (Note 2)         ₱ 0.00
-Less: Operating Expenses (Note 3)  ₱ {total_expense:,.2f}
-Net Income                        ₱ {net_income:,.2f}
-
-Note 1: Net Sales
-"""
-        if not income_items.empty:
-            for idx, row in income_items.iterrows():
-                statement_income += f"\t{row['Category']:<25} ₱ {row['Amount']:,.2f}\n"
+            if archive_selection.selection.rows:
+                arc_idx = user_archives.index[archive_selection.selection.rows[0]]
+                report_name = user_archives.loc[arc_idx, 'Period']
+                if st.button(f"🗑️ Delete Saved Report ({report_name})", type="primary"):
+                    save_all_archives(all_archives.drop(arc_idx))
+                    st.rerun()
         else:
-            statement_income += "\tNone recorded              ₱ 0.00\n"
-        statement_income += f"Total Net Sales                ₱ {total_income:,.2f}\n\n"
+            st.info("No saved reports.")
 
-        statement_income += "Note 2: Other Income\n\tNone recorded              ₱ 0.00\nTotal Other Income            ₱ 0.00\n\n"
-
-        statement_income += "Note 3: Operating Expenses\n"
-        if not expense_items.empty:
-            for idx, row in expense_items.iterrows():
-                statement_income += f"\t{row['Category']:<25} ₱ {row['Amount']:,.2f}\n"
-        else:
-            statement_income += "\tNone recorded              ₱ 0.00\n"
-        statement_income += f"Total Operating Expenses      ₱ {total_expense:,.2f}\n"
-
-        st.text(statement_income)
-
-    # -------------------------
-    # Statement of Council’s Equity
-    # -------------------------
-    st.subheader("Statement of Council’s Equity")
-    beginning_equity = st.number_input(
-        "ICSSC’s Equity, Beginning", min_value=0.0, value=25689.02
-    )
-    ending_equity = beginning_equity + total_income - total_expense
-    statement_equity = f"""
-INSTITUTE OF COMPUTER STUDIES - STUDENT COUNCIL
-STATEMENT OF COUNCIL’S EQUITY
-As of TechConnect {year_selected}
-
-ICSSC’s Equity, Beginning                ₱ {beginning_equity:>12,.2f}
-    Less:   Expenses                      ₱ {total_expense:>12,.2f}
-ICSSC’s Equity, Ending                   ₱ {ending_equity:>12,.2f}
-"""
-    st.text(statement_equity)
-
-    # -------------------------
-    # Statement of Financial Position
-    # -------------------------
-    st.subheader("Statement of Financial Position")
-    cash_coop = 0.0
-    supplies = 3890.50
-    equipment = 10250.00
-    accumulated_dep = 2050.00
-    accounts_payable = 0.0
-    unearned_income = 0.0
-    donations = 0.0
-
-    total_current_assets = cash_on_hand + cash_coop + supplies
-    total_noncurrent_assets = equipment - accumulated_dep
-    total_assets = total_current_assets + total_noncurrent_assets
-    total_equity = total_assets
-
-    statement_position = f"""
-INSTITUTE OF COMPUTER STUDIES - STUDENT COUNCIL
-STATEMENT OF FINANCIAL POSITION
-As of {month_selected} {year_selected}
-
-ASSETS
-Current Assets
-    Cash on Hand (Note 1)               ₱ {cash_on_hand:>12,.2f}
-    Cash on Coop (Note 2)               ₱ {cash_coop:>12,.2f}
-    Supplies (Note 3)                   ₱ {supplies:>12,.2f}
-Total Current Assets                     ₱ {total_current_assets:>12,.2f}
-Noncurrent Assets
-    Equipment (Note 4)                  ₱ {equipment:>12,.2f}
-    Accumulated Depreciation (Note 5)   ₱ ({accumulated_dep:>10,.2f})
-Total Noncurrent Assets                 ₱ {total_noncurrent_assets:>12,.2f}
-TOTAL ASSETS                            ₱ {total_assets:>12,.2f}
-
-LIABILITIES AND EQUITY
-Liabilities
-    Accounts Payable (Note 6)           ₱ {accounts_payable:>12,.2f}
-    Unearned Income (Note 7)            ₱ {unearned_income:>12,.2f}
-Total Liabilities                        ₱ {accounts_payable + unearned_income:>12,.2f}
-Equity
-    ICSSC, Capital (Note 8)             ₱ {total_assets:>12,.2f}
-    Donations (Note 9)                   ₱ {donations:>12,.2f}
-Total Equity                             ₱ {total_equity:>12,.2f}
-TOTAL LIABILITIES AND EQUITY            ₱ {total_assets:>12,.2f}
-"""
-    st.text(statement_position)
-
+    elif menu == "About":
+        st.title("About")
+        st.info("Student Council Finance Tracker with Row Selection, Deletion, and Balance Carry-over.")
 
