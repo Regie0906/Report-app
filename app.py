@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import os
 from datetime import datetime
 
 st.set_page_config(page_title="Student Council Finance Tracker", layout="wide")
@@ -15,7 +14,7 @@ if "current_user" not in st.session_state:
 if "reports" not in st.session_state:
     st.session_state.reports = {}
 if "manual_start_val" not in st.session_state:
-    st.session_state.manual_start_val = 0.0  # Historical Carry-over
+    st.session_state.manual_start_val = 0.0  # The real carry-over balance
 if "transactions" not in st.session_state:
     st.session_state.transactions = pd.DataFrame(
         columns=["Council", "Date", "Type", "Category", "Description", "Amount"]
@@ -24,7 +23,8 @@ if "transactions" not in st.session_state:
 COUNCILS = [
     "ICSSC - Institute of Computer Studies Student Council",
     "SSC - Supreme Student Council",
-    "PCSSC - Pasig Central Supreme Student Council",
+    "JPCS - Junior Philippine Computer Society",
+    "ITSO - IT Society Organization",
     "Other Organization"
 ]
 
@@ -32,7 +32,7 @@ COUNCILS = [
 # LOGIN PAGE
 # -------------------------
 if not st.session_state.logged_in:
-    st.title("Council Login")
+    st.title("🔐 Council Finance Login")
     selected_council = st.selectbox("Select Council / Organization", ["-- Choose One --"] + COUNCILS)
     
     if st.button("Login"):
@@ -54,6 +54,7 @@ else:
 
     menu = st.sidebar.radio("Navigation", ["Monthly Ledger", "Balance Sheet", "Saved Reports", "About"])
 
+    # Source of Data
     full_df = st.session_state.transactions
     user_df = full_df[full_df["Council"] == st.session_state.current_user].copy()
     user_df["Amount"] = pd.to_numeric(user_df["Amount"], errors='coerce').fillna(0)
@@ -68,31 +69,30 @@ else:
                                           format_func=lambda x: datetime(2026, x, 1).strftime('%B'))
         with col_y:
             year_selected = st.number_input("Year", value=2026)
-        
         with col_s:
-            # FIXED: Starting balance here defaults to 0 and does not affect the historical carry-over
+            # Monthly Ledger starts at 0 as requested
             ledger_start_bal = st.number_input("Month Starting Balance (₱)", value=0.0)
 
         st.session_state.current_period = f"{datetime(2026, month_selected, 1).strftime('%B')} {year_selected}"
 
-        # Filtering data
+        # Filtering logic
         user_df["Date"] = pd.to_datetime(user_df["Date"], errors='coerce')
         this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & (user_df["Date"].dt.year == year_selected)]
         
-        curr_exp = this_month_df[this_month_df["Type"] == "Expense"]["Amount"].sum()
         curr_inc = this_month_df[this_month_df["Type"] == "Income"]["Amount"].sum()
         curr_don_f = this_month_df[this_month_df["Type"] == "Donation (From)"]["Amount"].sum()
         curr_don_t = this_month_df[this_month_df["Type"] == "Donation (To)"]["Amount"].sum()
+        curr_exp = this_month_df[this_month_df["Type"] == "Expense"]["Amount"].sum()
         
-        # This calculation is only for this month's view
-        rem_bal = starting_bal + curr_inc + curr_don_f - curr_exp - curr_don_t
+        # Fixed NameError: using ledger_start_bal instead of starting_bal
+        rem_bal = ledger_start_bal + curr_inc + curr_don_f - curr_exp - curr_don_t
 
         st.subheader(f"Current Activity for {st.session_state.current_period}")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("STARTING BALANCE", f"₱ {starting_bal_:,.2f}")
-        m2.metric("EXPENSES", f"₱ {(curr_exp + curr_don_t):,.2f}")
-        m3.metric("INCOME", f"₱ {(curr_inc + curr_don_f):,.2f}")
-        m4.metric("ENDING BALANCE", f"₱ {rem_bal:,.2f}")
+        m1.metric("LEDGER START", f"₱ {ledger_start_bal:,.2f}")
+        m2.metric("MONTH EXPENSES", f"₱ {(curr_exp + curr_don_t):,.2f}")
+        m3.metric("MONTH INCOME", f"₱ {(curr_inc + curr_don_f):,.2f}")
+        m4.metric("MONTH ENDING", f"₱ {rem_bal:,.2f}")
 
         st.divider()
 
@@ -108,7 +108,7 @@ else:
             if st.button("Add Entry"):
                 new_row = pd.DataFrame([{
                     "Council": st.session_state.current_user,
-                    "Date": t_date, "Type": t_type, "Category": category, 
+                    "Date": str(t_date), "Type": t_type, "Category": category, 
                     "Description": desc, "Amount": amt_val
                 }])
                 st.session_state.transactions = pd.concat([st.session_state.transactions, new_row], ignore_index=True)
