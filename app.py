@@ -8,15 +8,13 @@ st.set_page_config(page_title="Student Council Finance Tracker", layout="wide")
 # -------------------------
 # DATABASE / CONFIG
 # -------------------------
-COUNCIL_CREDENTIALS = {
-    "ICSSC - Institute of Computer Studies Student Council": "ics123",
-    "SSC - Supreme Student Council": "ssc123",
-    "JPCS - Junior Philippine Computer Society": "jpcs123",
-    "ITSO - IT Society Organization": "itso123",
-    "Other Organization": "admin123"
-}
-
-councils = list(COUNCIL_CREDENTIALS.keys())
+COUNCILS = [
+    "ICSSC - Institute of Computer Studies Student Council",
+    "SSC - Supreme Student Council",
+    "JPCS - Junior Philippine Computer Society",
+    "ITSO - IT Society Organization",
+    "Other Organization"
+]
 
 # -------------------------
 # SESSION STORAGE INITIALIZATION
@@ -39,15 +37,16 @@ if "transactions" not in st.session_state:
 # -------------------------
 if not st.session_state.logged_in:
     st.title("🔐 Council Finance Login")
-    selected_council = st.selectbox("Select Council / Organization", councils)
-    password = st.text_input("Enter Password", type="password")
+    # Using a placeholder to ensure they choose a council
+    selected_council = st.selectbox("Select Council / Organization", ["-- Choose One --"] + COUNCILS)
+    
     if st.button("Login"):
-        if password == COUNCIL_CREDENTIALS.get(selected_council):
+        if selected_council != "-- Choose One --":
             st.session_state.logged_in = True
             st.session_state.current_user = selected_council
             st.rerun()
         else:
-            st.error("Incorrect password.")
+            st.warning("Please select a council before logging in.")
 else:
     # -------------------------
     # AUTHENTICATED APP
@@ -81,7 +80,7 @@ else:
 
         st.session_state.current_period = f"{datetime(2026, month_selected, 1).strftime('%B')} {year_selected}"
 
-        # Filtering current data for metrics
+        # Filtering data for current period metrics
         user_df["Date"] = pd.to_datetime(user_df["Date"], errors='coerce')
         this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & (user_df["Date"].dt.year == year_selected)]
         
@@ -100,6 +99,7 @@ else:
 
         st.divider()
 
+        # Input Section
         st.subheader("➕ Add New Transaction")
         with st.container(border=True):
             c1, c2, c3 = st.columns(3)
@@ -133,7 +133,6 @@ else:
         st_bal_sheet = st.session_state.manual_start_val
         current_period = st.session_state.get('current_period', "Current Month")
         
-        # Calculations based on user_df
         all_inc = user_df[user_df["Type"] == "Income"]["Amount"].sum()
         all_don_f = user_df[user_df["Type"] == "Donation (From)"]["Amount"].sum()
         all_don_t = user_df[user_df["Type"] == "Donation (To)"]["Amount"].sum()
@@ -160,11 +159,11 @@ REMAINING BALANCE:               ₱ {final_bal:,.2f}
             archive_key = f"{st.session_state.current_user}_{current_period}_{datetime.now().strftime('%H%M%S')}"
             st.session_state.reports[archive_key] = user_df.copy()
             
-            # Reset current entries for this user and carry over the balance
+            # Reset current user's ledger and carry balance forward
             st.session_state.transactions = full_df[full_df["Council"] != st.session_state.current_user]
             st.session_state.manual_start_val = final_bal
             
-            st.success(f"Report finalized! ₱{final_bal:,.2f} carried over as next Starting Balance.")
+            st.success(f"Report finalized! ₱{final_bal:,.2f} is now the Starting Balance.")
             st.rerun()
 
     elif menu == "Saved Reports":
@@ -172,7 +171,7 @@ REMAINING BALANCE:               ₱ {final_bal:,.2f}
         user_reports = {k: v for k, v in st.session_state.reports.items() if k.startswith(st.session_state.current_user)}
         if user_reports:
             for key, data in user_reports.items():
-                label = key.split('_')[1] # Get period name
+                label = key.split('_')[1]
                 with st.expander(f"Archived Report: {label}"):
                     st.dataframe(data, use_container_width=True)
         else:
@@ -180,4 +179,4 @@ REMAINING BALANCE:               ₱ {final_bal:,.2f}
 
     elif menu == "About":
         st.title("About")
-        st.info("Student Council Finance Tracker with Automated Carry-over logic.")
+        st.info("Student Council Finance Tracker: Simplified Login Version.")
