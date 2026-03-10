@@ -92,7 +92,7 @@ else:
 
         st.session_state.current_period = f"{datetime(2026, month_selected, 1).strftime('%B')} {year_selected}"
 
-        # 1. Calculation Section
+        # Filter and calculate
         this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & (user_df["Date"].dt.year == year_selected)].copy()
         inc_sum = this_month_df[this_month_df["Type"].isin(["Income", "Donation (From)"])]["Amount"].sum()
         exp_sum = this_month_df[this_month_df["Type"].isin(["Expense", "Donation (To)"])]["Amount"].sum()
@@ -106,8 +106,24 @@ else:
         m4.metric("REMAINING", f"₱{rem_bal:,.2f}")
 
         st.divider()
+        st.write("### Transaction History")
+        st.caption("Click a row below to select it, then the delete button will appear.")
 
-        # 2. Add Transaction Section
+        # Updated selection logic to avoid the error in your screenshot
+        ledger_selection = st.dataframe(
+            this_month_df[["Date", "Type", "Category", "Description", "Amount"]],
+            use_container_width=True,
+            on_select="rerun",
+            selection_mode="single_row"
+        )
+
+        # Show delete button ONLY if a row is selected
+        if ledger_selection.selection.rows:
+            selected_idx = this_month_df.index[ledger_selection.selection.rows[0]]
+            if st.button("🗑️ Delete Selected Record", type="primary"):
+                save_data(full_df.drop(selected_idx))
+                st.rerun()
+
         with st.expander("➕ Add New Transaction"):
             c1, c2, c3 = st.columns(3)
             with c1: t_date = st.date_input("Date")
@@ -118,24 +134,6 @@ else:
             if st.button("Add Entry"):
                 new_row = pd.DataFrame([{"Council": st.session_state.current_user, "Date": t_date, "Type": t_type, "Category": category, "Description": desc, "Amount": amt_val}])
                 save_data(pd.concat([full_df, new_row], ignore_index=True))
-                st.success("Transaction added!")
-                st.rerun()
-
-        # 3. Ledger/Table Section
-        st.write("### Transaction History")
-        st.caption("Click a row below to select it, then the delete button will appear.")
-
-        ledger_selection = st.dataframe(
-            this_month_df[["Date", "Type", "Category", "Description", "Amount"]],
-            use_container_width=True,
-            on_select="rerun",
-            selection_mode="single_row"
-        )
-
-        if ledger_selection.selection.rows:
-            selected_idx = this_month_df.index[ledger_selection.selection.rows[0]]
-            if st.button("🗑️ Delete Selected Record", type="primary"):
-                save_data(full_df.drop(selected_idx))
                 st.rerun()
 
     elif menu == "Balance Sheet":
@@ -154,6 +152,7 @@ else:
         if st.button("💾 Finalize & Save Report (Carry Over)"):
             archive_row = pd.DataFrame([{"Council": st.session_state.current_user, "Archive_Date": datetime.now().strftime("%Y-%m-%d"), "Period": current_period, "Starting_Bal": st_bal_sheet, "Total_Inc": inc, "Don_Rcv": don_f, "Total_Exp": exp, "Don_Giv": don_t, "Remaining_Bal": final_bal}])
             save_all_archives(pd.concat([load_archives(), archive_row], ignore_index=True))
+            # Delete entries and update carry-over
             save_data(full_df[full_df["Council"] != st.session_state.current_user])
             st.session_state.manual_start_val = final_bal
             st.success("Report Saved and Balance Carried Over!")
