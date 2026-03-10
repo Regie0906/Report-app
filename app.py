@@ -15,7 +15,7 @@ if "current_user" not in st.session_state:
 if "reports" not in st.session_state:
     st.session_state.reports = {}
 if "manual_start_val" not in st.session_state:
-    st.session_state.manual_start_val = 0.0
+    st.session_state.manual_start_val = 0.0  # Historical Carry-over
 if "transactions" not in st.session_state:
     st.session_state.transactions = pd.DataFrame(
         columns=["Council", "Date", "Type", "Category", "Description", "Amount"]
@@ -69,9 +69,10 @@ else:
                                           format_func=lambda x: datetime(2026, x, 1).strftime('%B'))
         with col_y:
             year_selected = st.number_input("Year", value=2026)
+        
         with col_s:
-            st_bal = st.number_input("Starting Balance (₱)", value=float(st.session_state.manual_start_val))
-            st.session_state.manual_start_val = st_bal
+            # FIXED: Starting balance here defaults to 0 and does not affect the historical carry-over
+            ledger_start_bal = st.number_input("Month Starting Balance (₱)", value=0.0)
 
         st.session_state.current_period = f"{datetime(2026, month_selected, 1).strftime('%B')} {year_selected}"
 
@@ -83,14 +84,16 @@ else:
         curr_don_f = this_month_df[this_month_df["Type"] == "Donation (From)"]["Amount"].sum()
         curr_don_t = this_month_df[this_month_df["Type"] == "Donation (To)"]["Amount"].sum()
         curr_exp = this_month_df[this_month_df["Type"] == "Expense"]["Amount"].sum()
-        rem_bal = st_bal + curr_inc + curr_don_f - curr_exp - curr_don_t
+        
+        # This calculation is only for this month's view
+        rem_bal = ledger_start_bal + curr_inc + curr_don_f - curr_exp - curr_don_t
 
-        st.subheader(f"Financial Activity for {st.session_state.current_period}")
+        st.subheader(f"Current Activity for {st.session_state.current_period}")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("STARTING BALANCE", f"₱ {st_bal:,.2f}")
-        m2.metric("EXPENSES", f"₱ {(curr_exp + curr_don_t):,.2f}")
-        m3.metric("INCOME/DONATIONS", f"₱ {(curr_inc + curr_don_f):,.2f}")
-        m4.metric("REMAINING BALANCE", f"₱ {rem_bal:,.2f}")
+        m1.metric("LEDGER START", f"₱ {ledger_start_bal:,.2f}")
+        m2.metric("MONTH EXPENSES", f"₱ {(curr_exp + curr_don_t):,.2f}")
+        m3.metric("MONTH INCOME", f"₱ {(curr_inc + curr_don_f):,.2f}")
+        m4.metric("MONTH ENDING", f"₱ {rem_bal:,.2f}")
 
         st.divider()
 
@@ -124,6 +127,7 @@ else:
 
     elif menu == "Balance Sheet":
         st.title("Financial Summary & Trends")
+        # Pulls the actual carried-over balance from the session
         st_bal_sheet = st.session_state.manual_start_val
         current_period = st.session_state.get('current_period', "Current Month")
         
@@ -131,28 +135,29 @@ else:
         all_don_f = user_df[user_df["Type"] == "Donation (From)"]["Amount"].sum()
         all_don_t = user_df[user_df["Type"] == "Donation (To)"]["Amount"].sum()
         all_exp = user_df[user_df["Type"] == "Expense"]["Amount"].sum()
+        
         final_bal = st_bal_sheet + all_inc + all_don_f - all_exp - all_don_t
 
         col_left, col_right = st.columns([1, 1])
         with col_left:
-            st.subheader("Balance Summary")
+            st.subheader("Cumulative Balance Summary")
             st.code(f"""
 {st.session_state.current_user}
 PERIOD: {current_period}
 --------------------------------------------------
-STARTING BALANCE:                ₱ {st_bal_sheet:,.2f}
+STARTING BALANCE (CARRY-OVER):   ₱ {st_bal_sheet:,.2f}
 --------------------------------------------------
 (+) TOTAL INCOME:                ₱ {all_inc:,.2f}
 (+) DONATIONS (RECEIVED):        ₱ {all_don_f:,.2f}
 (-) TOTAL EXPENSES:              ₱ {all_exp:,.2f}
 (-) DONATIONS (GIVEN OUT):       ₱ {all_don_t:,.2f}
 --------------------------------------------------
-REMAINING BALANCE:               ₱ {final_bal:,.2f}
+GRAND TOTAL BALANCE:             ₱ {final_bal:,.2f}
 --------------------------------------------------
             """)
 
         with col_right:
-            st.subheader("Balance Trend Line")
+            st.subheader("Cumulative Trend Line")
             if not user_df.empty:
                 chart_df = user_df.copy().sort_values("Date")
                 chart_df['Impact'] = chart_df.apply(
@@ -167,38 +172,34 @@ REMAINING BALANCE:               ₱ {final_bal:,.2f}
         if st.button("💾 Finalize & Save Report"):
             archive_key = f"{st.session_state.current_user}_{current_period}_{datetime.now().strftime('%H%M%S')}"
             st.session_state.reports[archive_key] = user_df.copy()
+            
+            # Carry the balance forward for the Balance Sheet, but clear the transactions
             st.session_state.transactions = full_df[full_df["Council"] != st.session_state.current_user]
             st.session_state.manual_start_val = final_bal
-            st.success(f"Report finalized! ₱{final_bal:,.2f} carried forward.")
+            st.success(f"Report finalized! ₱{final_bal:,.2f} is stored as your Carry-Over Balance.")
             st.rerun()
 
     elif menu == "Saved Reports":
         st.title("📁 Your Archived Reports")
-        st.info("You can edit archived reports here just like the Monthly Ledger.")
-        
         user_reports = {k: v for k, v in st.session_state.reports.items() if k.startswith(st.session_state.current_user)}
-        
         if user_reports:
             for key, data in user_reports.items():
                 label = key.split('_')[1]
                 with st.expander(f"Archived Report: {label}"):
-                    # Same function as ledger table: dynamic editing
                     edited_archived_df = st.data_editor(data, num_rows="dynamic", use_container_width=True, key=f"editor_{key}")
-                    
                     col_edit, col_del = st.columns([1, 1])
                     with col_edit:
                         if st.button("Update Archived Report", key=f"btn_save_{key}"):
                             st.session_state.reports[key] = edited_archived_df
-                            st.success("Archive updated successfully!")
+                            st.success("Archive updated!")
                             st.rerun()
                     with col_del:
                         if st.button("🗑️ Delete This Report", key=f"btn_del_{key}"):
                             del st.session_state.reports[key]
-                            st.warning("Report deleted.")
                             st.rerun()
         else:
             st.info("No saved reports found.")
 
     elif menu == "About":
         st.title("About")
-        st.info("Finance Tracker with Dynamic Ledger & Editable Archives.")
+        st.info("Finance Tracker: Independent Ledger and Cumulative Balance Sheet logic.")
