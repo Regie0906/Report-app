@@ -39,6 +39,9 @@ def load_archives():
         return pd.read_csv(ARCHIVE_FILE)
     return pd.DataFrame(columns=["Council", "Archive_Date", "Period", "Starting_Bal", "Total_Inc", "Don_Rcv", "Total_Exp", "Don_Giv", "Remaining_Bal"])
 
+def save_all_archives(df):
+    df.to_csv(ARCHIVE_FILE, index=False)
+
 # -------------------------
 # SESSION STORAGE
 # -------------------------
@@ -87,7 +90,6 @@ else:
             year_selected = st.number_input("Year", value=2026)
         
         with col_s:
-            # Auto-populated from carry-over, but still editable
             st_bal = st.number_input("Starting Balance (₱)", value=float(st.session_state.manual_start_val))
             st.session_state.manual_start_val = st_bal
 
@@ -112,26 +114,18 @@ else:
 
         st.divider()
 
-        # TRANSACTION MANAGEMENT
-        st.subheader("Manage Records")
+        st.subheader("Manage Current Transactions")
         if not this_month_df.empty:
-            # Selection box to choose a specific item
             selected_item_idx = st.selectbox(
-                "Select a record item to manage:", 
+                "Select a transaction to Delete:", 
                 options=this_month_df.index.tolist(),
-                format_func=lambda x: f"{this_month_df.loc[x, 'Date'].strftime('%Y-%m-%d')} | {this_month_df.loc[x, 'Type']} | {this_month_df.loc[x, 'Description']} (₱{this_month_df.loc[x, 'Amount']:,.2f})"
+                format_func=lambda x: f"{this_month_df.loc[x, 'Date'].strftime('%Y-%m-%d')} | {this_month_df.loc[x, 'Description']} (₱{this_month_df.loc[x, 'Amount']:,.2f})"
             )
             
-            act1, act2, _ = st.columns([1, 1, 2])
-            with act1:
-                if st.button("🗑️ Delete Selected"):
-                    save_data(full_df.drop(selected_item_idx))
-                    st.success("Record deleted.")
-                    st.rerun()
-            with act2:
-                if st.button("📥 Archive Selected"):
-                    # Individual archive logic could go here, for now it confirms index
-                    st.info("Item flagged for archive. Use Balance Sheet for full period saving.")
+            if st.button("🗑️ Delete Transaction", type="secondary"):
+                save_data(full_df.drop(selected_item_idx))
+                st.success("Transaction deleted.")
+                st.rerun()
 
             st.dataframe(this_month_df[["Date", "Type", "Category", "Description", "Amount"]], use_container_width=True)
         else:
@@ -186,7 +180,6 @@ REMAINING BALANCE:               ₱ {final_bal:,.2f}
         """)
 
         if st.button("💾 Finalize & Save Report (Carry Over Balance)"):
-            # 1. Archive the summary
             archive_row = pd.DataFrame([{
                 "Council": st.session_state.current_user,
                 "Archive_Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -199,27 +192,42 @@ REMAINING BALANCE:               ₱ {final_bal:,.2f}
                 "Remaining_Bal": final_bal
             }])
             df_arch = load_archives()
-            pd.concat([df_arch, archive_row], ignore_index=True).to_csv(ARCHIVE_FILE, index=False)
+            save_all_archives(pd.concat([df_arch, archive_row], ignore_index=True))
             
-            # 2. CLEAR the current ledger for this council
+            # Reset Ledger for user and carry over balance
             remaining_data = full_df[full_df["Council"] != st.session_state.current_user]
             save_data(remaining_data)
-            
-            # 3. SET Carry-over balance
             st.session_state.manual_start_val = final_bal
             
-            st.success(f"Report finalized! {final_bal:,.2f} carried over as new Starting Balance.")
-            st.balloons()
+            st.success(f"Report finalized! ₱{final_bal:,.2f} is now your new Starting Balance.")
+            st.rerun()
 
     elif menu == "Archived Reports":
         st.title("📁 Saved Reports")
-        archives = load_archives()
-        user_archives = archives[archives["Council"] == st.session_state.current_user]
+        all_archives = load_archives()
+        user_archives = all_archives[all_archives["Council"] == st.session_state.current_user]
+
         if not user_archives.empty:
+            st.subheader("Manage Saved Records")
+            # Select which archived report to delete
+            report_to_manage = st.selectbox(
+                "Select a Saved Report to Delete:",
+                options=user_archives.index.tolist(),
+                format_func=lambda x: f"Period: {user_archives.loc[x, 'Period']} (Saved on {user_archives.loc[x, 'Archive_Date']})"
+            )
+
+            if st.button("🗑️ Delete Saved Report", type="primary"):
+                # Drop from the full archive list and save
+                updated_archives = all_archives.drop(report_to_manage)
+                save_all_archives(updated_archives)
+                st.warning("Saved report deleted.")
+                st.rerun()
+
+            st.divider()
             st.dataframe(user_archives.drop(columns=["Council"]), use_container_width=True)
         else:
-            st.info("No archives found.")
+            st.info("No saved reports found.")
 
     elif menu == "About":
         st.title("About")
-        st.info("Finance System with Period Closing and Balance Carry-over.")
+        st.info("Finance System with Period Closing, Automated Carry-over, and Archive Management.")
