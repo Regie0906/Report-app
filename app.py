@@ -60,7 +60,7 @@ else:
         st.session_state.current_user = None
         st.rerun()
 
-    menu = st.sidebar.radio("Navigation", ["Monthly Ledger", "Balance Sheet", "Saved Reports", "About"])
+    menu = st.sidebar.radio("Navigation", ["Financial Report", "Balance Sheet", "Saved Reports", "About"])
 
     # Source of Data
     full_df = st.session_state.transactions.copy()
@@ -68,7 +68,7 @@ else:
     user_df = full_df[full_df["Council"] == st.session_state.current_user].copy()
     user_df["Amount"] = pd.to_numeric(user_df["Amount"], errors='coerce').fillna(0)
 
-    if menu == "Monthly Ledger":
+    if menu == "Financial Report":
         st.title(f"Financial Report: {st.session_state.current_user}")
         
         col_m, col_y = st.columns(2)
@@ -89,20 +89,20 @@ else:
 
         # Filtering logic for current month
         this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & (user_df["Date"].dt.year == year_selected)]
-        
+
+        curr_exp = this_month_df[this_month_df["Type"] == "Expense"]["Amount"].sum()
         curr_inc = this_month_df[this_month_df["Type"] == "Income"]["Amount"].sum()
         curr_don_f = this_month_df[this_month_df["Type"] == "Donation (From)"]["Amount"].sum()
         curr_don_t = this_month_df[this_month_df["Type"] == "Donation (To)"]["Amount"].sum()
-        curr_exp = this_month_df[this_month_df["Type"] == "Expense"]["Amount"].sum()
+        
         
         rem_bal = auto_start_bal + curr_inc + curr_don_f - curr_exp - curr_don_t
 
-        st.subheader(f"Current Activity for {st.session_state.current_period}")
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("BEGINNING BALANCE", f"₱ {auto_start_bal:,.2f}")
-        m2.metric("TOTAL EXPENSES", f"₱ {(curr_exp + curr_don_t):,.2f}", delta_color="inverse")
-        m3.metric("TOTAL INCOME", f"₱ {(curr_inc + curr_don_f):,.2f}")
-        m4.metric("ENDING BALANCE", f"₱ {rem_bal:,.2f}")
+        st.subheader(f"Report for the Month of {st.session_state.current_period}")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("TOTAL EXPENSES", f"₱ {(curr_exp + curr_don_t):,.2f}", delta_color="inverse")
+        m2.metric("TOTAL INCOME", f"₱ {(curr_inc + curr_don_f):,.2f}")
+        m3.metric("ENDING BALANCE", f"₱ {rem_bal:,.2f}")
 
         st.divider()
 
@@ -110,7 +110,7 @@ else:
         with st.container(border=True):
             c1, c2, c3 = st.columns(3)
             with c1: t_date = st.date_input("Date")
-            with c2: t_type = st.selectbox("Type", ["Income", "Expense", "Donation (From)", "Donation (To)"])
+            with c2: t_type = st.selectbox("Type", ["Expense", "Income", "Donation (From)", "Donation (To)"])
             with c3: category = st.text_input("Category")
             desc = st.text_input("Description")
             amt_val = st.number_input("Amount (₱)", min_value=0.0, step=100.0)
@@ -128,10 +128,10 @@ else:
                 st.success("Entry Saved!")
                 st.rerun()
 
-        st.subheader("History (All Time)")
+        st.subheader("History")
         # Show all transactions for context, or filter if preferred
         edited_ledger = st.data_editor(user_df, num_rows="dynamic", use_container_width=True, key="main_ledger")
-        if st.button("Save Changes to Ledger"):
+        if st.button("Save Changes"):
             other_councils = full_df[full_df["Council"] != st.session_state.current_user]
             edited_ledger["Council"] = st.session_state.current_user
             st.session_state.transactions = pd.concat([other_councils, edited_ledger], ignore_index=True)
@@ -152,14 +152,14 @@ else:
 
         col_left, col_right = st.columns([1, 1])
         with col_left:
-            st.subheader("Cumulative Summary")
+            st.subheader("Summary")
             st.code(f"""
 {st.session_state.current_user}
 AS OF: {datetime.now().strftime('%B %d, %Y')}
 --------------------------------------------------
+(-) TOTAL EXPENSES:              ₱ {all_exp:,.2f}
 (+) TOTAL INCOME:                ₱ {all_inc:,.2f}
 (+) DONATIONS (RECEIVED):        ₱ {all_don_f:,.2f}
-(-) TOTAL EXPENSES:              ₱ {all_exp:,.2f}
 (-) DONATIONS (GIVEN OUT):       ₱ {all_don_t:,.2f}
 --------------------------------------------------
 CASH ON HAND:                    ₱ {final_bal:,.2f}
