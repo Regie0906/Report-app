@@ -4,9 +4,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="Student Council Finance Tracker", layout="wide")
 
-# -------------------------
-# SESSION STORAGE INITIALIZATION
-# -------------------------
+
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "current_user" not in st.session_state:
@@ -27,18 +25,12 @@ COUNCILS = [
     "Other Organization"
 ]
 
-# -------------------------
-# HELPER FUNCTION: CALCULATE BALANCE
-# -------------------------
 def calculate_balance(df):
     """Calculates net balance from a dataframe of transactions"""
     inc = df[df["Type"].isin(["Income", "Donation (From)"])]["Amount"].sum()
     exp = df[df["Type"].isin(["Expense", "Donation (To)"])]["Amount"].sum()
     return inc - exp
 
-# -------------------------
-# LOGIN PAGE
-# -------------------------
 if not st.session_state.logged_in:
     st.title("Council Finance Login")
     selected_council = st.selectbox("Select Council / Organization", ["-- Choose One --"] + COUNCILS)
@@ -51,9 +43,7 @@ if not st.session_state.logged_in:
         else:
             st.warning("Please select a council before logging in.")
 else:
-    # -------------------------
-    # AUTHENTICATED APP
-    # -------------------------
+
     st.sidebar.title(f"👤 {st.session_state.current_user}")
     if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
@@ -81,13 +71,11 @@ else:
 
         st.session_state.current_period = f"{datetime(2026, month_selected, 1).strftime('%B')} {year_selected}"
 
-        # --- AUTOMATIC CALCULATION OF STARTING BALANCE ---
-        # Get all transactions BEFORE the selected month/year
+        
         first_day_of_month = datetime(year_selected, month_selected, 1)
         past_df = user_df[user_df["Date"] < first_day_of_month]
         auto_start_bal = calculate_balance(past_df)
 
-        # Filtering logic for current month
         this_month_df = user_df[(user_df["Date"].dt.month == month_selected) & (user_df["Date"].dt.year == year_selected)]
 
         curr_exp = this_month_df[this_month_df["Type"] == "Expense"]["Amount"].sum()
@@ -129,7 +117,7 @@ else:
                 st.rerun()
 
         st.subheader("History")
-        # Show all transactions for context, or filter if preferred
+
         edited_ledger = st.data_editor(user_df, num_rows="dynamic", use_container_width=True, key="main_ledger")
         if st.button("Save Changes"):
             other_councils = full_df[full_df["Council"] != st.session_state.current_user]
@@ -140,9 +128,8 @@ else:
 
     elif menu == "Balance Sheet":
         st.title("Financial Records")
+
         
-        # In Balance Sheet, "Starting Balance" is usually 0 unless you have a hard-coded 
-        # opening balance from previous years. Let's assume it's calculated from all time.
         all_exp = user_df[user_df["Type"] == "Expense"]["Amount"].sum()
         all_inc = user_df[user_df["Type"] == "Income"]["Amount"].sum()
         all_don_f = user_df[user_df["Type"] == "Donation (From)"]["Amount"].sum()
@@ -181,7 +168,7 @@ CASH ON HAND:                    ₱ {final_bal:,.2f}
 
     elif menu == "Saved Reports":
         st.title("📁 Your Saved Reports")
-        # Logic remains the same for archiving snapshots
+
         user_reports = {k: v for k, v in st.session_state.reports.items() if k.startswith(st.session_state.current_user)}
         if user_reports:
             for key, data in user_reports.items():
@@ -192,6 +179,27 @@ CASH ON HAND:                    ₱ {final_bal:,.2f}
             st.info("No saved reports found.")
 
     elif menu == "About":
-        # ... (Rest of your About code)
+
         st.title("About")
         st.info("Finance Tracker: Automated Ledger and Cumulative Balance logic.")
+
+        
+        st.markdown("""
+        ### Student Council Financial Reports Tracker
+
+        The **Student Council Financial Reports Tracker** is a digital tool designed to help student councils and organizations efficiently record, monitor, and manage their financial activities. This application simplifies the process of tracking income, expenses, and financial balances while automatically generating organized financial reports.
+
+        ### Key Features
+        • Record monthly income and expenses  
+        • Automatic calculation of balances and totals  
+        • Editable transaction ledger  
+        • Financial statement generation  
+        • Multi-organization tracking  
+        • Organized monthly financial reports  
+
+        ### Purpose
+        This application was developed to support **student leaders, treasurers, and council officers** in managing their finances more efficiently and responsibly. It promotes proper financial documentation, transparency, and accountability within student organizations.
+
+        ### Developer
+        This application was created as a financial management tool to assist student councils in preparing clear and accurate financial reports for their activities and projects.
+        """)
